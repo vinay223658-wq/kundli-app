@@ -42,7 +42,7 @@ const authAdmin = getAuth();
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static("public")); // frontend yahan se serve hoga
+app.use(express.static("Public")); // frontend yahan se serve hoga
 
 const PORT = process.env.PORT || 3000;
 
