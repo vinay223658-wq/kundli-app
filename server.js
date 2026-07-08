@@ -23,7 +23,16 @@ dotenv.config();
 // --------------------------------------------------------
 // Firebase Admin initialize karte hain (login + database ke liye)
 // --------------------------------------------------------
-const firebaseKey = JSON.parse(readFileSync("./firebase-key.json", "utf-8"));
+// Firebase key do jagah se aa sakti hai:
+// 1. Render/hosting pe: FIREBASE_KEY_JSON environment variable se
+// 2. Apne computer pe (local testing): firebase-key.json file se
+// --------------------------------------------------------
+let firebaseKey;
+if (process.env.FIREBASE_KEY_JSON) {
+  firebaseKey = JSON.parse(process.env.FIREBASE_KEY_JSON);
+} else {
+  firebaseKey = JSON.parse(readFileSync("./firebase-key.json", "utf-8"));
+}
 initializeApp({
   credential: cert(firebaseKey),
 });
