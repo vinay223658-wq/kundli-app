@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8" />
+<title>Kundli Career Horoscope</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 480px;
+    margin: 40px auto;
+    padding: 0 16px;
+    background: #fdf6ec;
+    color: #2b2b2b;
+  }
+  h1 { font-size: 22px; color: #8a3b12; }
+  label { display: block; margin-top: 14px; font-weight: 600; font-size: 14px; }
+  input {
+    width: 100%;
+    padding: 10px;
+    margin-top: 4px;
+    border: 1px solid #d8c3a5;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-size: 14px;
+  }
+  button {
+    margin-top: 20px;
+    width: 100%;
+    padding: 12px;
+    background: #b5501a;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.6; }
+  #result {
+    margin-top: 24px;
+    padding: 16px;
+    background: white;
+    border-radius: 10px;
+    border: 1px solid #eadfca;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    display: none;
+  }
+  .hint { font-size: 12px; color: #888; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <h1>🔮 Apni Kundli aur Career Horoscope Jano</h1>
+
+  <!-- ============ LOGIN SCREEN ============ -->
+  <div id="loginScreen">
+    <label>Email</label>
+    <input id="loginEmail" type="email" placeholder="e.g. rahul@gmail.com" />
+
+    <button id="loginBtn" onclick="sendLoginLink()">Login Link Bhejo</button>
+
+    <div id="loginInfo" style="color:green; font-size:13px; margin-top:8px;"></div>
+    <div id="loginError" style="color:red; font-size:13px; margin-top:8px;"></div>
+  </div>
+
+  <script>
+    // ============ FIREBASE SETUP ============
+    // NOTE: Ye config values secret nahi hain, browser mein safely dikhti hain
+    const firebaseConfig = {
+      apiKey: "AIzaSyCe5vjYLj0HtDzyMwmohma6gMp7eC82Ttw",
+      authDomain: "kundliapp-f831d.firebaseapp.com",
+      projectId: "kundliapp-f831d",
+      storageBucket: "kundliapp-f831d.firebasestorage.app",
+      messagingSenderId: "932575463048",
+      appId: "1:932575463048:web:5a09387cc067f3fb69813d",
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+
+    // Link jab click hoga, wapas isi page pe aayega
+    const actionCodeSettings = {
+      url: window.location.origin + window.location.pathname,
+      handleCodeInApp: true,
+    };
+
+    // Step 1: User email daal ke button dabata hai — login link bhej dete hain
+    async function sendLoginLink() {
+      const errorDiv = document.getElementById("loginError");
+      const infoDiv = document.getElementById("loginInfo");
+      errorDiv.textContent = "";
+      infoDiv.textContent = "";
+      const email = document.getElementById("loginEmail").value.trim();
+
+      if (!email) {
+        errorDiv.textContent = "Sahi email daalo";
+        return;
+      }
+
+      const btn = document.getElementById("loginBtn");
+      btn.disabled = true;
+      btn.textContent = "Bhej rahe hain...";
+
+      try {
+        await auth.sendSignInLinkToEmail(email, actionCodeSettings);
+        // Email yaad rakhte hain taaki link click karne pe dobara na poochna pade
+        localStorage.setItem("emailForSignIn", email);
+        infoDiv.textContent = "✅ Login link aapke email pe bhej diya hai. Inbox check karo (spam bhi dekh lena) aur us link pe click karo.";
+        btn.textContent = "Bhej Diya ✓";
+      } catch (err) {
+        errorDiv.textContent = "Error: " + err.message;
+        btn.disabled = false;
+        btn.textContent = "Login Link Bhejo";
+      }
+    }
+
+    // Step 2: Jab user email mein link pe click karke wapas is page pe aata hai,
+    // hum check karte hain ki ye ek valid login link hai
+    async function checkForLoginLink() {
+      if (auth.isSignInWithEmailLink(window.location.href)) {
+        const errorDiv = document.getElementById("loginError");
+        let email = localStorage.getItem("emailForSignIn");
+
+        if (!email) {
+          // Agar same browser nahi hai (jaise mobile pe link khola), to email poochna padega
+          email = window.prompt("Confirm karne ke liye apna email daalo:");
+        }
+
+        try {
+          const result = await auth.signInWithEmailLink(email, window.location.href);
+          localStorage.removeItem("emailForSignIn");
+          const idToken = await result.user.getIdToken();
+
+          const res = await fetch("/api/auth/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ idToken }),
+          });
+          const data = await res.json();
+
+          if (!res.ok) throw new Error(data.error || "Login fail ho gaya");
+
+          localStorage.setItem("kundli_uid", data.uid);
+          localStorage.setItem("kundli_wallet", data.user.wallet);
+
+          // URL se link ka lamba code hata dete hain, saaf dikhega
+          window.history.replaceState({}, document.title, window.location.pathname);
+
+          showMainApp(data.user.wallet);
+        } catch (err) {
+          errorDiv.textContent = "Error: " + err.message;
+        }
+        return true;
+      }
+      return false;
+    }
+
+    function showMainApp(wallet) {
+      document.getElementById("loginScreen").style.display = "none";
+      document.getElementById("mainApp").style.display = "block";
+      document.getElementById("walletDisplay").textContent = "Wallet: ₹" + (wallet || 0);
+    }
+
+    function logout() {
+      auth.signOut();
+      localStorage.removeItem("kundli_uid");
+      localStorage.removeItem("kundli_wallet");
+      location.reload();
+    }
+
+    // Page load hote hi check karo — pehle login link check karo, phir existing session
+    window.addEventListener("DOMContentLoaded", async () => {
+      const cameFromLoginLink = await checkForLoginLink();
+      if (cameFromLoginLink) return;
+
+      const savedUid = localStorage.getItem("kundli_uid");
+      const savedWallet = localStorage.getItem("kundli_wallet");
+      if (savedUid) {
+        showMainApp(savedWallet);
+      }
+    });
+  </script>
+
+  <!-- ============ MAIN APP (login ke baad dikhega) ============ -->
+  <div id="mainApp" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <span class="hint" id="walletDisplay">Wallet: ₹0</span>
+      <span class="hint" style="cursor:pointer; text-decoration:underline;" onclick="logout()">Logout</span>
+    </div>
+
+  <label>Naam</label>
+  <input id="name" placeholder="e.g. Rahul Sharma" />
+
+  <label>Date of Birth</label>
+  <input id="dob" type="date" />
+
+  <label>Time of Birth</label>
+  <input id="tob" type="time" />
+
+  <label>Birth Place (Shehar)</label>
+  <input id="place" placeholder="e.g. Delhi, Mumbai, Haldwani..." autocomplete="off" />
+  <div id="suggestions" style="
+    position: relative;
+    background: white;
+    border: 1px solid #d8c3a5;
+    border-radius: 8px;
+    margin-top: 2px;
+    max-height: 180px;
+    overflow-y: auto;
+    display: none;
+  "></div>
+  <div class="hint" id="selectedPlaceHint"></div>
+
+  <!-- Ye hidden fields select hone pe khud bhar jayenge -->
+  <input type="hidden" id="lat" />
+  <input type="hidden" id="lon" />
+
+  <button id="submitBtn" onclick="getHoroscope()">Horoscope Dekho</button>
+
+  <div id="chartContainer" style="display:none; margin-top: 20px; text-align: center;">
+    <h3 style="font-size: 15px; color: #8a3b12;">Aapki Kundli (North Indian Style)</h3>
+    <div id="chartSvgHolder" style="background:white; padding:12px; border-radius:10px; border:1px solid #eadfca;"></div>
+  </div>
+
+  <div id="result"></div>
+
+  <!-- Chat Section - horoscope milne ke baad hi dikhega -->
+  <div id="chatSection" style="display:none; margin-top: 24px;">
+    <h3 style="font-size: 15px; color: #8a3b12;">💬 Apna sawal poocho</h3>
+    <div id="chatMessages" style="
+      background: white;
+      border: 1px solid #eadfca;
+      border-radius: 10px;
+      padding: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    "></div>
+    <div style="display: flex; gap: 8px;">
+      <input id="chatInput" placeholder="e.g. Is saal shaadi ka yog hai kya?" style="flex:1;" />
+      <button id="chatSendBtn" style="width:auto; margin-top:0; padding: 10px 16px;" onclick="sendChatMessage()">Bhejo</button>
+    </div>
+  </div>
+
+  <script src="cities.js"></script>
+  <script>
+    let selectedCity = null;
+    let savedKundliData = null; // horoscope milne ke baad yahan save hoga, chat ke liye use hoga
+    let savedName = "";
+    let chatHistory = []; // conversation history taaki bot pichli baat yaad rakhe
+
+    const placeInput = document.getElementById("place");
+    const suggestionsBox = document.getElementById("suggestions");
+    const hint = document.getElementById("selectedPlaceHint");
+
+    placeInput.addEventListener("input", () => {
+      const query = placeInput.value.trim().toLowerCase();
+      selectedCity = null;
+      document.getElementById("lat").value = "";
+      document.getElementById("lon").value = "";
+      hint.textContent = "";
+
+      if (query.length < 2) {
+        suggestionsBox.style.display = "none";
+        return;
+      }
+
+      const matches = INDIAN_CITIES.filter((c) =>
+        c.name.toLowerCase().includes(query)
+      ).slice(0, 8);
+
+      if (matches.length === 0) {
+        suggestionsBox.style.display = "none";
+        return;
+      }
+
+      suggestionsBox.innerHTML = matches
+        .map(
+          (c, i) =>
+            `<div data-index="${i}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0e6d2;">
+              ${c.name} <span style="color:#999; font-size:12px;">(${c.state})</span>
+            </div>`
+        )
+        .join("");
+      suggestionsBox.style.display = "block";
+
+      // Har suggestion pe click listener lagate hain
+      suggestionsBox.querySelectorAll("div[data-index]").forEach((el, i) => {
+        el.addEventListener("click", () => {
+          const city = matches[i];
+          selectedCity = city;
+          placeInput.value = city.name;
+          document.getElementById("lat").value = city.lat;
+          document.getElementById("lon").value = city.lon;
+          hint.textContent = `✓ Coordinates set: ${city.lat}, ${city.lon}`;
+          suggestionsBox.style.display = "none";
+        });
+        el.addEventListener("mouseenter", () => (el.style.background = "#fdf6ec"));
+        el.addEventListener("mouseleave", () => (el.style.background = "white"));
+      });
+    });
+
+    // Bahar click karne pe suggestions band ho jayen
+    document.addEventListener("click", (e) => {
+      if (e.target !== placeInput) {
+        suggestionsBox.style.display = "none";
+      }
+    });
+
+    async function getHoroscope() {
+      const btn = document.getElementById("submitBtn");
+      const resultDiv = document.getElementById("result");
+
+      const payload = {
+        name: document.getElementById("name").value,
+        dob: document.getElementById("dob").value,
+        tob: document.getElementById("tob").value,
+        lat: document.getElementById("lat").value,
+        lon: document.getElementById("lon").value,
+      };
+
+      if (!payload.name || !payload.dob || !payload.tob || !selectedCity) {
+        alert("Sab fields bharo, aur list se apna shehar select karo!");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Kundli banayi ja rahi hai...";
+      resultDiv.style.display = "none";
+
+      try {
+        const res = await fetch("/api/horoscope", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || "Kuch galat ho gaya");
+
+        // Agar chart mila hai to usko dikhao
+        const chartContainer = document.getElementById("chartContainer");
+        const chartHolder = document.getElementById("chartSvgHolder");
+        if (data.chartSvg) {
+          chartHolder.innerHTML = data.chartSvg;
+          chartContainer.style.display = "block";
+        } else {
+          chartContainer.style.display = "none";
+        }
+
+        resultDiv.style.display = "block";
+        resultDiv.textContent = data.careerHoroscope;
+
+        // Chat ke liye data save karo aur chat section dikhao
+        savedKundliData = data.kundliRaw;
+        savedName = payload.name;
+        chatHistory = [];
+        document.getElementById("chatMessages").innerHTML = "";
+        document.getElementById("chatSection").style.display = "block";
+      } catch (err) {
+        resultDiv.style.display = "block";
+        resultDiv.textContent = "Error: " + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Horoscope Dekho";
+      }
+    }
+    async function sendChatMessage() {
+      const input = document.getElementById("chatInput");
+      const messagesBox = document.getElementById("chatMessages");
+      const sendBtn = document.getElementById("chatSendBtn");
+      const question = input.value.trim();
+
+      if (!question) return;
+
+      // User ka message turant dikhao
+      messagesBox.innerHTML += `<div style="margin-bottom:10px; text-align:right;">
+        <span style="background:#b5501a; color:white; padding:8px 12px; border-radius:10px; display:inline-block; max-width:80%;">${question}</span>
+      </div>`;
+      messagesBox.scrollTop = messagesBox.scrollHeight;
+      input.value = "";
+      sendBtn.disabled = true;
+
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: savedName,
+            kundliData: savedKundliData,
+            question,
+            history: chatHistory,
+          }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || "Kuch galat ho gaya");
+
+        // Bot ka jawab dikhao
+        messagesBox.innerHTML += `<div style="margin-bottom:10px; text-align:left;">
+          <span style="background:#fdf6ec; padding:8px 12px; border-radius:10px; display:inline-block; max-width:80%;">${data.answer}</span>
+        </div>`;
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+
+        // History update karo taaki bot context yaad rakhe
+        chatHistory.push({ role: "user", content: question });
+        chatHistory.push({ role: "assistant", content: data.answer });
+      } catch (err) {
+        messagesBox.innerHTML += `<div style="color:red; margin-bottom:10px;">Error: ${err.message}</div>`;
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    // Enter dabane pe bhi message send ho jaye
+    document.getElementById("chatInput").addEventListener("keypress", (e) => {
+      if (e.key === "Enter") sendChatMessage();
+    });
+  </script>
+  </div> <!-- mainApp band -->
+</body>
+</html>

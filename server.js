@@ -1,0 +1,333 @@
+// ============================================================
+// KUNDLI + CAREER HOROSCOPE APP
+// ------------------------------------------------------------
+// Flow:
+// 1. User form se Name, DOB, Time of Birth, Place bhejta hai
+// 2. Prokerala Astrology API se real kundli data (planets, houses) lete hain
+// 3. Us raw data ko Claude API ko bhejte hain -> friendly Hindi/Hinglish
+//    career horoscope text banwane ke liye
+// 4. Dono cheezein (raw kundli + interpretation) frontend ko wapas bhejte hain
+// ============================================================
+
+import express from "express";
+import fetch from "node-fetch";
+import dotenv from "dotenv";
+import cors from "cors";
+import { initializeApp, cert } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
+import { readFileSync } from "fs";
+
+dotenv.config();
+
+// --------------------------------------------------------
+// Firebase Admin initialize karte hain (login + database ke liye)
+// --------------------------------------------------------
+const firebaseKey = JSON.parse(readFileSync("./firebase-key.json", "utf-8"));
+initializeApp({
+  credential: cert(firebaseKey),
+});
+const db = getFirestore();
+const authAdmin = getAuth();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.static("public")); // frontend yahan se serve hoga
+
+const PORT = process.env.PORT || 3000;
+
+// --------------------------------------------------------
+// STEP 1: Prokerala API se OAuth token lena
+// (Prokerala OAuth2 "client_credentials" flow use karta hai)
+// --------------------------------------------------------
+let cachedToken = null;
+let tokenExpiry = 0;
+
+async function getProkeralaToken() {
+  // Agar token abhi bhi valid hai to dubara mat maango
+  if (cachedToken && Date.now() < tokenExpiry) {
+    return cachedToken;
+  }
+
+  const response = await fetch("https://api.prokerala.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: process.env.PROKERALA_CLIENT_ID,
+      client_secret: process.env.PROKERALA_CLIENT_SECRET,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Prokerala token lene mein error: " + response.status);
+  }
+
+  const data = await response.json();
+  cachedToken = data.access_token;
+  // token expiry se 60 sec pehle refresh kar lenge (safe margin)
+  tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
+  return cachedToken;
+}
+
+// --------------------------------------------------------
+// STEP 2: Kundli / birth-chart data fetch karna
+// --------------------------------------------------------
+async function getKundliData({ dob, tob, lat, lon, tz }) {
+  const token = await getProkeralaToken();
+
+  // datetime format required by Prokerala: YYYY-MM-DDTHH:mm:ss+05:30
+  // HTML time input sirf "HH:mm" deta hai (seconds nahi), isliye seconds add karte hain
+  const timeWithSeconds = tob.length === 5 ? `${tob}:00` : tob;
+  const datetime = `${dob}T${timeWithSeconds}${tz || "+05:30"}`;
+
+  const url = new URL("https://api.prokerala.com/v2/astrology/birth-details");
+  url.searchParams.set("ayanamsa", "1"); // 1 = Lahiri (most common in India)
+  url.searchParams.set("coordinates", `${lat},${lon}`);
+  url.searchParams.set("datetime", datetime);
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Prokerala ne ye error diya:", errorBody);
+    throw new Error(
+      "Kundli data fetch karne mein error: " + response.status + " - " + errorBody
+    );
+  }
+
+  return response.json();
+}
+
+// --------------------------------------------------------
+// STEP 2B: North Indian style Kundli Chart (SVG) fetch karna
+// --------------------------------------------------------
+async function getKundliChartSvg({ dob, tob, lat, lon, tz }) {
+  const token = await getProkeralaToken();
+
+  const timeWithSeconds = tob.length === 5 ? `${tob}:00` : tob;
+  const datetime = `${dob}T${timeWithSeconds}${tz || "+05:30"}`;
+
+  const url = new URL("https://api.prokerala.com/v2/astrology/chart");
+  url.searchParams.set("ayanamsa", "1");
+  url.searchParams.set("coordinates", `${lat},${lon}`);
+  url.searchParams.set("datetime", datetime);
+  url.searchParams.set("chart_type", "rasi");
+  url.searchParams.set("chart_style", "north-indian");
+  url.searchParams.set("format", "svg");
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Chart API ne ye error diya:", errorBody);
+    throw new Error("Chart fetch karne mein error: " + response.status + " - " + errorBody);
+  }
+
+  // Ye response seedha SVG text hota hai (JSON nahi)
+  return response.text();
+}
+
+//         text mein convert karwana
+// --------------------------------------------------------
+async function getCareerHoroscopeFromClaude({ name, kundliData }) {
+  const prompt = `Tum ek anubhavi (experienced) Vedic astrologer ho jo Hinglish (Hindi + English mix) mein
+baat karte ho, jaisa Astrotalk app pe astrologers karte hain.
+
+Neeche ek vyakti ki kundli ka raw astrological data diya gaya hai:
+
+Naam: ${name}
+Kundli Data (JSON): ${JSON.stringify(kundliData)}
+
+Is data ke aadhar par ek friendly, easy-to-samajhne wala paragraph likho jisme ho:
+1. Overall personality ki 2-3 lines
+2. Career ke liye kaunse strengths hain
+3. Career mein kis tarah ke opportunities aane wale hain (agle 6-12 mahine)
+4. Ek chhota practical suggestion
+
+Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur motivating rakho.`;
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-5",
+      max_tokens: 600,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Claude ne ye error diya:", errorBody);
+    throw new Error("Claude API error: " + response.status + " - " + errorBody);
+  }
+
+  const data = await response.json();
+  const textBlock = data.content.find((c) => c.type === "text");
+  return textBlock ? textBlock.text : "";
+}
+
+// --------------------------------------------------------
+// STEP 4: Chatbot — user apne sawal pooch sake apni kundli ke baare mein
+// --------------------------------------------------------
+async function askAstrologerBot({ name, kundliData, question, history }) {
+  const systemPrompt = `Tum ek anubhavi (experienced), friendly Vedic astrologer ho jo Hinglish
+(Hindi + English mix) mein baat karte ho, bilkul Astrotalk app ke astrologers jaisa.
+
+Is user ki kundli ka raw data:
+Naam: ${name}
+Kundli Data (JSON): ${JSON.stringify(kundliData)}
+
+Rules:
+- User ke sawaalon ka jawab isi kundli data ke aadhar par do
+- Jawab chhota, friendly aur samajhne layak rakho (3-5 lines max, jab tak user detail na maange)
+- Agar sawal astrology se related na ho, to politely bata do ki tum sirf astrology/career/relationship guidance de sakte ho
+- Kabhi medical, legal, ya financial guarantee mat do — sirf astrological perspective do`;
+
+  // Pichli conversation history ko messages format mein convert karte hain
+  const messages = (history || []).map((h) => ({
+    role: h.role, // "user" ya "assistant"
+    content: h.content,
+  }));
+  messages.push({ role: "user", content: question });
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-5",
+      max_tokens: 400,
+      system: systemPrompt,
+      messages,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Claude chat ne ye error diya:", errorBody);
+    throw new Error("Claude chat API error: " + response.status + " - " + errorBody);
+  }
+
+  const data = await response.json();
+  const textBlock = data.content.find((c) => c.type === "text");
+  return textBlock ? textBlock.text : "";
+}
+
+// --------------------------------------------------------
+// LOGIN ENDPOINT: Frontend se Firebase token aata hai,
+// hum usse verify karke user ko database mein save/fetch karte hain
+// --------------------------------------------------------
+app.post("/api/auth/verify", async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) {
+      return res.status(400).json({ error: "idToken zaroori hai" });
+    }
+
+    // Token verify karo — ye confirm karta hai ki request genuine Firebase user se hai
+    const decoded = await authAdmin.verifyIdToken(idToken);
+    const uid = decoded.uid;
+
+    const userRef = db.collection("users").doc(uid);
+    const existingDoc = await userRef.get();
+
+    if (!existingDoc.exists) {
+      // Naya user hai — wallet 0 se shuru karte hain
+      await userRef.set({
+        phone: decoded.phone_number || "",
+        wallet: 0,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    const userData = (await userRef.get()).data();
+    res.json({ success: true, uid, user: userData });
+  } catch (err) {
+    console.error("Login verify error:", err.message);
+    res.status(401).json({ error: "Login verify nahi hua: " + err.message });
+  }
+});
+
+// --------------------------------------------------------
+// MAIN ENDPOINT: Frontend ye hi call karega
+// --------------------------------------------------------
+app.post("/api/horoscope", async (req, res) => {
+  try {
+    const { name, dob, tob, lat, lon } = req.body;
+
+    if (!name || !dob || !tob || !lat || !lon) {
+      return res.status(400).json({
+        error: "name, dob, tob, lat, lon — sab fields zaroori hain",
+      });
+    }
+
+    // 1. Real kundli data lao
+    const kundliData = await getKundliData({ dob, tob, lat, lon });
+
+    // 2. North Indian style chart (SVG) bhi lao
+    let chartSvg = null;
+    try {
+      chartSvg = await getKundliChartSvg({ dob, tob, lat, lon });
+    } catch (chartErr) {
+      // Agar chart fail ho jaye to bhi horoscope text dikhana band mat karo
+      console.error("Chart fetch fail hua, lekin aage badh rahe hain:", chartErr.message);
+    }
+
+    // 3. Us data ko Claude se samjhwao (career horoscope banwao)
+    const careerHoroscope = await getCareerHoroscopeFromClaude({
+      name,
+      kundliData,
+    });
+
+    // 4. Sab kuch frontend ko bhejo
+    res.json({
+      success: true,
+      kundliRaw: kundliData,
+      chartSvg,
+      careerHoroscope,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --------------------------------------------------------
+// CHAT ENDPOINT: User apne sawal poochega yahan
+// --------------------------------------------------------
+app.post("/api/chat", async (req, res) => {
+  try {
+    const { name, kundliData, question, history } = req.body;
+
+    if (!name || !kundliData || !question) {
+      return res.status(400).json({
+        error: "name, kundliData aur question zaroori hain",
+      });
+    }
+
+    const answer = await askAstrologerBot({ name, kundliData, question, history });
+
+    res.json({ success: true, answer });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Server chal raha hai: http://localhost:${PORT}`);
+});
