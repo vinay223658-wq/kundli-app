@@ -17,6 +17,8 @@ import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { readFileSync } from "fs";
+import crypto from "crypto";
+import Razorpay from "razorpay";
 
 dotenv.config();
 
@@ -84,6 +86,14 @@ initializeApp({
 });
 const db = getFirestore();
 const authAdmin = getAuth();
+
+// --------------------------------------------------------
+// Razorpay client (wallet mein paisa add karne ke liye)
+// --------------------------------------------------------
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
+});
 
 const app = express();
 app.use(cors());
@@ -363,7 +373,72 @@ app.post("/api/auth/verify-otp", async (req, res) => {
 });
 
 // --------------------------------------------------------
-// LOGIN ENDPOINT: Frontend se Firebase token aata hai,
+// WALLET STEP 1: Razorpay order banao (user "Add Money" dabata hai)
+// --------------------------------------------------------
+app.post("/api/wallet/create-order", async (req, res) => {
+  try {
+    const { amount } = req.body; // amount rupees mein aayega, jaise 500
+    if (!amount || amount < 1) {
+      return res.status(400).json({ error: "Sahi amount daalo" });
+    }
+
+    const order = await razorpay.orders.create({
+      amount: Math.round(amount * 100), // Razorpay paise mein leta hai (₹1 = 100 paise)
+      currency: "INR",
+      receipt: "wallet_" + Date.now(),
+    });
+
+    res.json({
+      success: true,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      keyId: process.env.RAZORPAY_KEY_ID, // frontend ko public key chahiye checkout kholne ke liye
+    });
+  } catch (err) {
+    console.error("Order create error:", err.message);
+    res.status(500).json({ error: "Order banane mein error: " + err.message });
+  }
+});
+
+// --------------------------------------------------------
+// WALLET STEP 2: Payment complete hone ke baad, verify karke wallet update karo
+// --------------------------------------------------------
+app.post("/api/wallet/verify-payment", async (req, res) => {
+  try {
+    const { uid, amount, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+    if (!uid || !amount || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ error: "Kuch fields missing hain" });
+    }
+
+    // Signature verify karte hain — ye confirm karta hai ki payment genuine hai,
+    // koi fake request nahi bhej raha
+    const generatedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(razorpay_order_id + "|" + razorpay_payment_id)
+      .digest("hex");
+
+    if (generatedSignature !== razorpay_signature) {
+      return res.status(400).json({ error: "Payment verify nahi hui — signature match nahi hua" });
+    }
+
+    // Sahi hai — ab wallet mein paisa add karo
+    const userRef = db.collection("users").doc(uid);
+    const userDoc = await userRef.get();
+    const currentWallet = userDoc.exists ? userDoc.data().wallet || 0 : 0;
+    const newWallet = currentWallet + Number(amount);
+
+    await userRef.update({ wallet: newWallet });
+
+    res.json({ success: true, newWallet });
+  } catch (err) {
+    console.error("Payment verify error:", err.message);
+    res.status(500).json({ error: "Verify karne mein error: " + err.message });
+  }
+});
+
+
 // hum usse verify karke user ko database mein save/fetch karte hain
 // --------------------------------------------------------
 app.post("/api/auth/verify", async (req, res) => {

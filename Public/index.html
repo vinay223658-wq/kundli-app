@@ -2,6 +2,7 @@
 <html lang="hi">
 <head>
 <meta charset="UTF-8" />
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <title>Kundli Career Horoscope</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -176,6 +177,65 @@
       document.getElementById("walletDisplay").textContent = "Wallet: ₹" + (wallet || 0);
     }
 
+    // Wallet mein paisa add karne ka poora flow
+    async function addMoney(amount) {
+      const errorDiv = document.getElementById("walletError");
+      errorDiv.textContent = "";
+      const uid = localStorage.getItem("kundli_uid");
+
+      try {
+        // Step 1: Backend se order banwao
+        const orderRes = await fetch("/api/wallet/create-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount }),
+        });
+        const orderData = await orderRes.json();
+        if (!orderRes.ok) throw new Error(orderData.error || "Order banane mein error");
+
+        // Step 2: Razorpay ka payment popup kholo
+        const options = {
+          key: orderData.keyId,
+          amount: orderData.amount,
+          currency: orderData.currency,
+          order_id: orderData.orderId,
+          name: "Kundli AI",
+          description: "Wallet mein ₹" + amount + " add karo",
+          handler: async function (response) {
+            // Step 3: Payment ho jaye to backend se verify karwao
+            try {
+              const verifyRes = await fetch("/api/wallet/verify-payment", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  uid,
+                  amount,
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                }),
+              });
+              const verifyData = await verifyRes.json();
+              if (!verifyRes.ok) throw new Error(verifyData.error || "Verify nahi hua");
+
+              // Wallet display update karo
+              localStorage.setItem("kundli_wallet", verifyData.newWallet);
+              document.getElementById("walletDisplay").textContent = "Wallet: ₹" + verifyData.newWallet;
+              alert("✅ ₹" + amount + " wallet mein add ho gaye!");
+            } catch (err) {
+              errorDiv.textContent = "Payment verify error: " + err.message;
+            }
+          },
+          theme: { color: "#b5501a" },
+        };
+
+        const rzp = new Razorpay(options);
+        rzp.open();
+      } catch (err) {
+        errorDiv.textContent = "Error: " + err.message;
+      }
+    }
+
     function logout() {
       auth.signOut();
       localStorage.removeItem("kundli_uid");
@@ -200,6 +260,13 @@
       <span class="hint" id="walletDisplay">Wallet: ₹0</span>
       <span class="hint" style="cursor:pointer; text-decoration:underline;" onclick="logout()">Logout</span>
     </div>
+
+    <div style="display:flex; gap:8px; margin-bottom:16px;">
+      <button style="width:auto; margin-top:0; padding:8px 14px; font-size:13px;" onclick="addMoney(100)">+ ₹100</button>
+      <button style="width:auto; margin-top:0; padding:8px 14px; font-size:13px;" onclick="addMoney(500)">+ ₹500</button>
+      <button style="width:auto; margin-top:0; padding:8px 14px; font-size:13px;" onclick="addMoney(1000)">+ ₹1000</button>
+    </div>
+    <div id="walletError" style="color:red; font-size:13px; margin-bottom:10px;"></div>
 
   <label>Naam</label>
   <input id="name" placeholder="e.g. Rahul Sharma" />
