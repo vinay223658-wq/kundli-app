@@ -66,7 +66,8 @@ async function sendEmail({ to, subject, html }) {
 
 // OTP codes yahan temporarily store hote hain (memory mein)
 // Format: { "email@example.com": { otp: "123456", expiresAt: 1234567890 } }
-const otpStore = new Map();
+// NOTE: OTP ab Firestore mein store hote hain (memory mein nahi),
+// taaki server restart/redeploy hone pe bhi OTP safe rahe
 
 // --------------------------------------------------------
 // Firebase Admin initialize karte hain (login + database ke liye)
@@ -306,7 +307,10 @@ app.post("/api/auth/send-otp", async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minute valid rahega
 
-    otpStore.set(email, { otp, expiresAt });
+    // Firestore mein OTP store karte hain (email ko document id jaisa use karke,
+    // safe naam ke liye base64 encode karte hain kyunki email mein @ hota hai)
+    const otpDocId = Buffer.from(email).toString("base64");
+    await db.collection("otps").doc(otpDocId).set({ email, otp, expiresAt });
 
     await sendEmail({
       to: email,
@@ -339,12 +343,16 @@ app.post("/api/auth/verify-otp", async (req, res) => {
       return res.status(400).json({ error: "Email aur OTP zaroori hain" });
     }
 
-    const record = otpStore.get(email);
-    if (!record) {
+    const otpDocId = Buffer.from(email).toString("base64");
+    const otpDocRef = db.collection("otps").doc(otpDocId);
+    const otpDoc = await otpDocRef.get();
+
+    if (!otpDoc.exists) {
       return res.status(400).json({ error: "Pehle OTP mangwao" });
     }
+    const record = otpDoc.data();
     if (Date.now() > record.expiresAt) {
-      otpStore.delete(email);
+      await otpDocRef.delete();
       return res.status(400).json({ error: "OTP expire ho gaya, dobara mangwao" });
     }
     if (record.otp !== otp) {
@@ -352,7 +360,7 @@ app.post("/api/auth/verify-otp", async (req, res) => {
     }
 
     // OTP sahi hai — ab use kar liya, delete kar dete hain
-    otpStore.delete(email);
+    await otpDocRef.delete();
 
     // Is email se pehle se koi Firebase user hai to use lo, warna naya banao
     let userRecord;
