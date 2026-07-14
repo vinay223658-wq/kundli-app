@@ -17,21 +17,50 @@ import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { readFileSync } from "fs";
-import nodemailer from "nodemailer";
 
 dotenv.config();
 
 // --------------------------------------------------------
-// Email bhejne ka setup (Brevo SMTP use kar rahe hain)
+// Email bhejne ka function (Brevo HTTP API use karte hain,
+// SMTP port kai hosting providers pe blocked hota hai)
 // --------------------------------------------------------
-const mailTransporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  auth: {
-    user: process.env.BREVO_SMTP_LOGIN,
-    pass: process.env.BREVO_SMTP_KEY,
-  },
-});
+async function sendEmail({ to, subject, html }) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": process.env.BREVO_API_KEY,
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        sender: { name: "Kundli AI", email: "vinay223658@gmail.com" },
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error("Brevo ne ye status diya " + response.status + ": " + errorBody);
+    }
+  } catch (err) {
+    // Poori error detail console mein print karte hain debugging ke liye
+    console.error("sendEmail full error detail:", {
+      message: err.message,
+      code: err.code,
+      cause: err.cause ? String(err.cause) : undefined,
+      name: err.name,
+    });
+    throw new Error(err.message || "Unknown email error");
+  }
+}
 
 // OTP codes yahan temporarily store hote hain (memory mein)
 // Format: { "email@example.com": { otp: "123456", expiresAt: 1234567890 } }
@@ -269,8 +298,7 @@ app.post("/api/auth/send-otp", async (req, res) => {
 
     otpStore.set(email, { otp, expiresAt });
 
-    await mailTransporter.sendMail({
-      from: '"Kundli AI" <no-reply@kundliapp.com>',
+    await sendEmail({
       to: email,
       subject: "Aapka Login Code - Kundli AI",
       html: `
