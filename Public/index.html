@@ -58,7 +58,13 @@
     <label>Email</label>
     <input id="loginEmail" type="email" placeholder="e.g. rahul@gmail.com" />
 
-    <button id="loginBtn" onclick="sendLoginLink()">Login Link Bhejo</button>
+    <button id="sendOtpBtn" onclick="sendOtp()">OTP Bhejo</button>
+
+    <div id="otpSection" style="display:none;">
+      <label>OTP</label>
+      <input id="otpInput" placeholder="6-digit code" maxlength="6" />
+      <button id="verifyOtpBtn" onclick="verifyOtp()">Verify Karo</button>
+    </div>
 
     <div id="loginInfo" style="color:green; font-size:13px; margin-top:8px;"></div>
     <div id="loginError" style="color:red; font-size:13px; margin-top:8px;"></div>
@@ -78,14 +84,8 @@
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
 
-    // Link jab click hoga, wapas isi page pe aayega
-    const actionCodeSettings = {
-      url: window.location.origin + window.location.pathname,
-      handleCodeInApp: true,
-    };
-
-    // Step 1: User email daal ke button dabata hai — login link bhej dete hain
-    async function sendLoginLink() {
+    // Step 1: User email daal ke button dabata hai — 6-digit OTP bhej dete hain
+    async function sendOtp() {
       const errorDiv = document.getElementById("loginError");
       const infoDiv = document.getElementById("loginInfo");
       errorDiv.textContent = "";
@@ -97,62 +97,77 @@
         return;
       }
 
-      const btn = document.getElementById("loginBtn");
+      const btn = document.getElementById("sendOtpBtn");
       btn.disabled = true;
       btn.textContent = "Bhej rahe hain...";
 
       try {
-        await auth.sendSignInLinkToEmail(email, actionCodeSettings);
-        // Email yaad rakhte hain taaki link click karne pe dobara na poochna pade
-        localStorage.setItem("emailForSignIn", email);
-        infoDiv.textContent = "✅ Login link aapke email pe bhej diya hai. Inbox check karo (spam bhi dekh lena) aur us link pe click karo.";
+        const res = await fetch("/api/auth/send-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "OTP bhejne mein error");
+
+        document.getElementById("otpSection").style.display = "block";
+        infoDiv.textContent = "✅ OTP aapke email pe bhej diya hai (spam bhi check kar lena).";
         btn.textContent = "Bhej Diya ✓";
       } catch (err) {
         errorDiv.textContent = "Error: " + err.message;
         btn.disabled = false;
-        btn.textContent = "Login Link Bhejo";
+        btn.textContent = "OTP Bhejo";
       }
     }
 
-    // Step 2: Jab user email mein link pe click karke wapas is page pe aata hai,
-    // hum check karte hain ki ye ek valid login link hai
-    async function checkForLoginLink() {
-      if (auth.isSignInWithEmailLink(window.location.href)) {
-        const errorDiv = document.getElementById("loginError");
-        let email = localStorage.getItem("emailForSignIn");
+    // Step 2: User OTP type karke Verify dabata hai
+    async function verifyOtp() {
+      const errorDiv = document.getElementById("loginError");
+      errorDiv.textContent = "";
+      const email = document.getElementById("loginEmail").value.trim();
+      const otp = document.getElementById("otpInput").value.trim();
 
-        if (!email) {
-          // Agar same browser nahi hai (jaise mobile pe link khola), to email poochna padega
-          email = window.prompt("Confirm karne ke liye apna email daalo:");
-        }
-
-        try {
-          const result = await auth.signInWithEmailLink(email, window.location.href);
-          localStorage.removeItem("emailForSignIn");
-          const idToken = await result.user.getIdToken();
-
-          const res = await fetch("/api/auth/verify", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ idToken }),
-          });
-          const data = await res.json();
-
-          if (!res.ok) throw new Error(data.error || "Login fail ho gaya");
-
-          localStorage.setItem("kundli_uid", data.uid);
-          localStorage.setItem("kundli_wallet", data.user.wallet);
-
-          // URL se link ka lamba code hata dete hain, saaf dikhega
-          window.history.replaceState({}, document.title, window.location.pathname);
-
-          showMainApp(data.user.wallet);
-        } catch (err) {
-          errorDiv.textContent = "Error: " + err.message;
-        }
-        return true;
+      if (!otp) {
+        errorDiv.textContent = "OTP daalo";
+        return;
       }
-      return false;
+
+      const btn = document.getElementById("verifyOtpBtn");
+      btn.disabled = true;
+      btn.textContent = "Check kar rahe hain...";
+
+      try {
+        // Backend se OTP verify karwao, badle mein custom token milega
+        const otpRes = await fetch("/api/auth/verify-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, otp }),
+        });
+        const otpData = await otpRes.json();
+        if (!otpRes.ok) throw new Error(otpData.error || "OTP galat hai");
+
+        // Us custom token se Firebase mein sign-in complete karo
+        const result = await auth.signInWithCustomToken(otpData.customToken);
+        const idToken = await result.user.getIdToken();
+
+        // Ab user ko database mein save/fetch karwao
+        const res = await fetch("/api/auth/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Login fail ho gaya");
+
+        localStorage.setItem("kundli_uid", data.uid);
+        localStorage.setItem("kundli_wallet", data.user.wallet);
+
+        showMainApp(data.user.wallet);
+      } catch (err) {
+        errorDiv.textContent = "Error: " + err.message;
+        btn.disabled = false;
+        btn.textContent = "Verify Karo";
+      }
     }
 
     function showMainApp(wallet) {
@@ -168,11 +183,8 @@
       location.reload();
     }
 
-    // Page load hote hi check karo — pehle login link check karo, phir existing session
-    window.addEventListener("DOMContentLoaded", async () => {
-      const cameFromLoginLink = await checkForLoginLink();
-      if (cameFromLoginLink) return;
-
+    // Page load hote hi check karo — agar pehle se login hai to seedha app dikhao
+    window.addEventListener("DOMContentLoaded", () => {
       const savedUid = localStorage.getItem("kundli_uid");
       const savedWallet = localStorage.getItem("kundli_wallet");
       if (savedUid) {
@@ -180,6 +192,7 @@
       }
     });
   </script>
+
 
   <!-- ============ MAIN APP (login ke baad dikhega) ============ -->
   <div id="mainApp" style="display:none;">

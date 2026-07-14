@@ -17,8 +17,25 @@ import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { readFileSync } from "fs";
+import nodemailer from "nodemailer";
 
 dotenv.config();
+
+// --------------------------------------------------------
+// Email bhejne ka setup (Brevo SMTP use kar rahe hain)
+// --------------------------------------------------------
+const mailTransporter = nodemailer.createTransport({
+  host: "smtp-relay.brevo.com",
+  port: 587,
+  auth: {
+    user: process.env.BREVO_SMTP_LOGIN,
+    pass: process.env.BREVO_SMTP_KEY,
+  },
+});
+
+// OTP codes yahan temporarily store hote hain (memory mein)
+// Format: { "email@example.com": { otp: "123456", expiresAt: 1234567890 } }
+const otpStore = new Map();
 
 // --------------------------------------------------------
 // Firebase Admin initialize karte hain (login + database ke liye)
@@ -235,6 +252,87 @@ Rules:
   const textBlock = data.content.find((c) => c.type === "text");
   return textBlock ? textBlock.text : "";
 }
+
+// --------------------------------------------------------
+// OTP SEND: User email daalta hai, hum 6-digit code bhejte hain
+// --------------------------------------------------------
+app.post("/api/auth/send-otp", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "Email zaroori hai" });
+    }
+
+    // 6-digit random OTP banate hain
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minute valid rahega
+
+    otpStore.set(email, { otp, expiresAt });
+
+    await mailTransporter.sendMail({
+      from: '"Kundli AI" <no-reply@kundliapp.com>',
+      to: email,
+      subject: "Aapka Login Code - Kundli AI",
+      html: `
+        <div style="font-family: sans-serif; padding: 20px;">
+          <h2 style="color:#b5501a;">Kundli AI Login</h2>
+          <p>Aapka verification code hai:</p>
+          <h1 style="letter-spacing: 6px; color:#333;">${otp}</h1>
+          <p style="color:#888; font-size:13px;">Ye code 5 minute ke liye valid hai.</p>
+        </div>
+      `,
+    });
+
+    res.json({ success: true, message: "OTP bhej diya" });
+  } catch (err) {
+    console.error("OTP send error:", err.message);
+    res.status(500).json({ error: "OTP bhejne mein error: " + err.message });
+  }
+});
+
+// --------------------------------------------------------
+// OTP VERIFY: User code type karta hai, hum check karke
+// ek Firebase custom token bana ke dete hain login complete karne ke liye
+// --------------------------------------------------------
+app.post("/api/auth/verify-otp", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res.status(400).json({ error: "Email aur OTP zaroori hain" });
+    }
+
+    const record = otpStore.get(email);
+    if (!record) {
+      return res.status(400).json({ error: "Pehle OTP mangwao" });
+    }
+    if (Date.now() > record.expiresAt) {
+      otpStore.delete(email);
+      return res.status(400).json({ error: "OTP expire ho gaya, dobara mangwao" });
+    }
+    if (record.otp !== otp) {
+      return res.status(400).json({ error: "Galat OTP" });
+    }
+
+    // OTP sahi hai — ab use kar liya, delete kar dete hain
+    otpStore.delete(email);
+
+    // Is email se pehle se koi Firebase user hai to use lo, warna naya banao
+    let userRecord;
+    try {
+      userRecord = await authAdmin.getUserByEmail(email);
+    } catch {
+      userRecord = await authAdmin.createUser({ email });
+    }
+
+    // Custom token banate hain jisse frontend login complete kar sake
+    const customToken = await authAdmin.createCustomToken(userRecord.uid);
+
+    res.json({ success: true, customToken });
+  } catch (err) {
+    console.error("OTP verify error:", err.message);
+    res.status(500).json({ error: "Verify karne mein error: " + err.message });
+  }
+});
 
 // --------------------------------------------------------
 // LOGIN ENDPOINT: Frontend se Firebase token aata hai,
