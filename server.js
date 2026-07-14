@@ -526,20 +526,39 @@ app.post("/api/horoscope", async (req, res) => {
 
 // --------------------------------------------------------
 // CHAT ENDPOINT: User apne sawal poochega yahan
+// Har sawal ka ₹5 wallet se katega
 // --------------------------------------------------------
+const CHAT_PRICE = 5;
+
 app.post("/api/chat", async (req, res) => {
   try {
-    const { name, kundliData, question, history } = req.body;
+    const { uid, name, kundliData, question, history } = req.body;
 
-    if (!name || !kundliData || !question) {
+    if (!uid || !name || !kundliData || !question) {
       return res.status(400).json({
-        error: "name, kundliData aur question zaroori hain",
+        error: "uid, name, kundliData aur question zaroori hain",
       });
     }
 
+    // Pehle wallet check karo
+    const userRef = db.collection("users").doc(uid);
+    const userDoc = await userRef.get();
+    const currentWallet = userDoc.exists ? userDoc.data().wallet || 0 : 0;
+
+    if (currentWallet < CHAT_PRICE) {
+      return res.status(400).json({
+        error: `Wallet mein sirf ₹${currentWallet} hai. Ek sawal ke liye ₹${CHAT_PRICE} chahiye — pehle wallet mein paisa add karo.`,
+        insufficientBalance: true,
+      });
+    }
+
+    // Paisa pehle kaat lete hain (taaki double-charge na ho agar user jaldi jaldi dabaye)
+    const newWallet = currentWallet - CHAT_PRICE;
+    await userRef.update({ wallet: newWallet });
+
     const answer = await askAstrologerBot({ name, kundliData, question, history });
 
-    res.json({ success: true, answer });
+    res.json({ success: true, answer, newWallet });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

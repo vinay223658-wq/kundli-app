@@ -306,7 +306,7 @@
 
   <!-- Chat Section - horoscope milne ke baad hi dikhega -->
   <div id="chatSection" style="display:none; margin-top: 24px;">
-    <h3 style="font-size: 15px; color: #8a3b12;">💬 Apna sawal poocho</h3>
+    <h3 style="font-size: 15px; color: #8a3b12;">💬 Apna sawal poocho <span style="font-size:12px; color:#999; font-weight:normal;">(₹5 per sawal)</span></h3>
     <div id="chatMessages" style="
       background: white;
       border: 1px solid #eadfca;
@@ -462,10 +462,12 @@
       sendBtn.disabled = true;
 
       try {
+        const uid = localStorage.getItem("kundli_uid");
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            uid,
             name: savedName,
             kundliData: savedKundliData,
             question,
@@ -481,6 +483,10 @@
           <span style="background:#fdf6ec; padding:8px 12px; border-radius:10px; display:inline-block; max-width:80%;">${data.answer}</span>
         </div>`;
         messagesBox.scrollTop = messagesBox.scrollHeight;
+
+        // Wallet display update karo (₹5 kat gaya)
+        localStorage.setItem("kundli_wallet", data.newWallet);
+        document.getElementById("walletDisplay").textContent = "Wallet: ₹" + data.newWallet;
 
         // History update karo taaki bot context yaad rakhe
         chatHistory.push({ role: "user", content: question });
