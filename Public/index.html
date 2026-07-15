@@ -323,7 +323,6 @@
     </div>
   </div>
 
-  <script src="cities.js"></script>
   <script>
     let selectedCity = null;
     let savedKundliData = null; // horoscope milne ke baad yahan save hoga, chat ke liye use hoga
@@ -333,52 +332,66 @@
     const placeInput = document.getElementById("place");
     const suggestionsBox = document.getElementById("suggestions");
     const hint = document.getElementById("selectedPlaceHint");
+    let searchDebounceTimer = null;
+    let currentMatches = [];
 
     placeInput.addEventListener("input", () => {
-      const query = placeInput.value.trim().toLowerCase();
+      const query = placeInput.value.trim();
       selectedCity = null;
       document.getElementById("lat").value = "";
       document.getElementById("lon").value = "";
       hint.textContent = "";
 
-      if (query.length < 2) {
+      // Pichla pending search cancel karo (debounce — bahut zyada requests na jayein)
+      clearTimeout(searchDebounceTimer);
+
+      if (query.length < 3) {
         suggestionsBox.style.display = "none";
         return;
       }
 
-      const matches = INDIAN_CITIES.filter((c) =>
-        c.name.toLowerCase().includes(query)
-      ).slice(0, 8);
-
-      if (matches.length === 0) {
-        suggestionsBox.style.display = "none";
-        return;
-      }
-
-      suggestionsBox.innerHTML = matches
-        .map(
-          (c, i) =>
-            `<div data-index="${i}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0e6d2;">
-              ${c.name} <span style="color:#999; font-size:12px;">(${c.state})</span>
-            </div>`
-        )
-        .join("");
+      suggestionsBox.innerHTML = `<div style="padding:8px 12px; color:#999;">Dhoond rahe hain...</div>`;
       suggestionsBox.style.display = "block";
 
-      // Har suggestion pe click listener lagate hain
-      suggestionsBox.querySelectorAll("div[data-index]").forEach((el, i) => {
-        el.addEventListener("click", () => {
-          const city = matches[i];
-          selectedCity = city;
-          placeInput.value = city.name;
-          document.getElementById("lat").value = city.lat;
-          document.getElementById("lon").value = city.lon;
-          hint.textContent = `✓ Coordinates set: ${city.lat}, ${city.lon}`;
-          suggestionsBox.style.display = "none";
-        });
-        el.addEventListener("mouseenter", () => (el.style.background = "#fdf6ec"));
-        el.addEventListener("mouseleave", () => (el.style.background = "white"));
-      });
+      // 400ms wait karte hain taaki user type karna band kare, phir search karein
+      searchDebounceTimer = setTimeout(async () => {
+        try {
+          const res = await fetch("/api/places?q=" + encodeURIComponent(query));
+          const data = await res.json();
+          currentMatches = data.results || [];
+
+          if (currentMatches.length === 0) {
+            suggestionsBox.innerHTML = `<div style="padding:8px 12px; color:#999;">Koi jagah nahi mili</div>`;
+            return;
+          }
+
+          suggestionsBox.innerHTML = currentMatches
+            .map(
+              (c, i) =>
+                `<div data-index="${i}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0e6d2; font-size:13px;">
+                  ${c.name}
+                </div>`
+            )
+            .join("");
+
+          // Har suggestion pe click listener lagate hain
+          suggestionsBox.querySelectorAll("div[data-index]").forEach((el, i) => {
+            el.addEventListener("click", () => {
+              const place = currentMatches[i];
+              selectedCity = place;
+              placeInput.value = place.name;
+              document.getElementById("lat").value = place.lat;
+              document.getElementById("lon").value = place.lon;
+              hint.textContent = `✓ Coordinates set: ${place.lat.toFixed(4)}, ${place.lon.toFixed(4)}`;
+              suggestionsBox.style.display = "none";
+            });
+            el.addEventListener("mouseenter", () => (el.style.background = "#fdf6ec"));
+            el.addEventListener("mouseleave", () => (el.style.background = "white"));
+          });
+        } catch (err) {
+          suggestionsBox.innerHTML = `<div style="padding:8px 12px; color:red;">Search mein error aayi</div>`;
+        }
+      }, 400);
     });
 
     // Bahar click karne pe suggestions band ho jayen

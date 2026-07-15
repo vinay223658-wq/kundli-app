@@ -296,6 +296,51 @@ Rules:
 // --------------------------------------------------------
 // OTP SEND: User email daalta hai, hum 6-digit code bhejte hain
 // --------------------------------------------------------
+// --------------------------------------------------------
+// PLACE SEARCH: User jo bhi type kare (chhota gaon ho ya bada shehar),
+// OpenStreetMap ke through poori India mein dhoondte hain
+// --------------------------------------------------------
+app.get("/api/places", async (req, res) => {
+  try {
+    const query = req.query.q;
+    if (!query || query.length < 2) {
+      return res.json({ results: [] });
+    }
+
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.searchParams.set("q", query);
+    url.searchParams.set("format", "json");
+    url.searchParams.set("countrycodes", "in"); // sirf India
+    url.searchParams.set("limit", "8");
+    url.searchParams.set("addressdetails", "1");
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        // Nominatim ko ek User-Agent chahiye hota hai (unki policy hai)
+        "User-Agent": "KundliAI-App/1.0 (contact: vinay223658@gmail.com)",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Place search API error: " + response.status);
+    }
+
+    const data = await response.json();
+
+    // Sirf zaroori fields frontend ko bhejte hain
+    const results = data.map((place) => ({
+      name: place.display_name,
+      lat: parseFloat(place.lat),
+      lon: parseFloat(place.lon),
+    }));
+
+    res.json({ results });
+  } catch (err) {
+    console.error("Place search error:", err.message);
+    res.status(500).json({ error: err.message, results: [] });
+  }
+});
+
 app.post("/api/auth/send-otp", async (req, res) => {
   try {
     const { email } = req.body;
