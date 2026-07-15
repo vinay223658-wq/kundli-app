@@ -307,21 +307,20 @@ app.get("/api/places", async (req, res) => {
       return res.json({ results: [] });
     }
 
-    const url = new URL("https://nominatim.openstreetmap.org/search");
+    const url = new URL("https://api.locationiq.com/v1/search");
+    url.searchParams.set("key", process.env.LOCATIONIQ_API_KEY);
     url.searchParams.set("q", query);
     url.searchParams.set("format", "json");
     url.searchParams.set("countrycodes", "in"); // sirf India
     url.searchParams.set("limit", "8");
-    url.searchParams.set("addressdetails", "1");
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        // Nominatim ko ek User-Agent chahiye hota hai (unki policy hai)
-        "User-Agent": "KundliAI-App/1.0 (contact: vinay223658@gmail.com)",
-      },
-    });
+    const response = await fetch(url.toString());
 
     if (!response.ok) {
+      // LocationIQ 404 deta hai jab koi result na mile — usko error na maano, khali list bhejo
+      if (response.status === 404) {
+        return res.json({ results: [] });
+      }
       throw new Error("Place search API error: " + response.status);
     }
 
