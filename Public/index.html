@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
@@ -7,68 +7,104 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <style>
+  * { box-sizing: border-box; }
   body {
-    font-family: system-ui, sans-serif;
+    font-family: 'Segoe UI', system-ui, sans-serif;
     max-width: 480px;
-    margin: 40px auto;
-    padding: 0 16px;
-    background: #fdf6ec;
-    color: #2b2b2b;
+    margin: 0 auto;
+    padding: 24px 16px 60px;
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 15% 10%, rgba(255,215,140,0.15) 0%, transparent 35%),
+      radial-gradient(circle at 85% 20%, rgba(255,255,255,0.08) 0%, transparent 30%),
+      radial-gradient(circle at 50% 80%, rgba(255,180,90,0.1) 0%, transparent 40%),
+      linear-gradient(160deg, #2b1055 0%, #4a1942 35%, #6b1f3a 65%, #8a2f1f 100%);
+    color: #f5ead8;
+    background-attachment: fixed;
   }
-  h1 { font-size: 22px; color: #8a3b12; }
-  label { display: block; margin-top: 14px; font-weight: 600; font-size: 14px; }
-  input {
+  h1 {
+    font-size: 22px;
+    color: #ffd77a;
+    text-align: center;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    margin-bottom: 24px;
+    letter-spacing: 0.3px;
+  }
+  label { display: block; margin-top: 14px; font-weight: 600; font-size: 13px; color: #f0d9b5; letter-spacing: 0.3px; }
+  input, select {
     width: 100%;
-    padding: 10px;
-    margin-top: 4px;
-    border: 1px solid #d8c3a5;
+    padding: 11px;
+    margin-top: 5px;
+    border: 1px solid rgba(255,215,140,0.35);
     border-radius: 8px;
     box-sizing: border-box;
     font-size: 14px;
+    background: rgba(255,255,255,0.95);
+    color: #2b2b2b;
+  }
+  input:focus, select:focus {
+    outline: none;
+    border-color: #ffd77a;
+    box-shadow: 0 0 0 3px rgba(255,215,140,0.25);
   }
   button {
     margin-top: 20px;
     width: 100%;
-    padding: 12px;
-    background: #b5501a;
+    padding: 13px;
+    background: linear-gradient(135deg, #d98324, #b5501a);
     color: white;
     border: none;
     border-radius: 8px;
-    font-size: 16px;
+    font-size: 15px;
+    font-weight: 600;
     cursor: pointer;
+    box-shadow: 0 4px 14px rgba(217,131,36,0.35);
+    transition: transform 0.15s, box-shadow 0.15s;
   }
-  button:disabled { opacity: 0.6; }
+  button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(217,131,36,0.45); }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
   #result {
     margin-top: 24px;
-    padding: 16px;
-    background: white;
-    border-radius: 10px;
-    border: 1px solid #eadfca;
-    line-height: 1.6;
+    padding: 18px;
+    background: rgba(255,255,255,0.97);
+    border-radius: 12px;
+    border: 1px solid rgba(255,215,140,0.4);
+    line-height: 1.7;
     white-space: pre-wrap;
     display: none;
+    color: #2b2b2b;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.2);
   }
-  .hint { font-size: 12px; color: #888; margin-top: 4px; }
+  .hint { font-size: 12px; color: #d8c3a0; margin-top: 5px; }
+  .card {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,215,140,0.2);
+    border-radius: 14px;
+    padding: 20px;
+    backdrop-filter: blur(4px);
+  }
+  .time-row { display: flex; gap: 8px; margin-top: 5px; }
+  .time-row select { margin-top: 0; }
 </style>
 </head>
 <body>
-  <h1>🔮 Apni Kundli aur Career Horoscope Jano</h1>
+  <h1>🔮 Kundli AI — Discover Your Destiny</h1>
 
   <!-- ============ LOGIN SCREEN ============ -->
-  <div id="loginScreen">
+  <div id="loginScreen" class="card">
     <label>Email</label>
     <input id="loginEmail" type="email" placeholder="e.g. rahul@gmail.com" />
 
-    <button id="sendOtpBtn" onclick="sendOtp()">OTP Bhejo</button>
+    <button id="sendOtpBtn" onclick="sendOtp()">Send OTP</button>
 
     <div id="otpSection" style="display:none;">
       <label>OTP</label>
       <input id="otpInput" placeholder="6-digit code" maxlength="6" />
-      <button id="verifyOtpBtn" onclick="verifyOtp()">Verify Karo</button>
+      <button id="verifyOtpBtn" onclick="verifyOtp()">Verify</button>
     </div>
 
-    <div id="loginInfo" style="color:green; font-size:13px; margin-top:8px;"></div>
-    <div id="loginError" style="color:red; font-size:13px; margin-top:8px;"></div>
+    <div id="loginInfo" style="color:#8fe3a3; font-size:13px; margin-top:8px;"></div>
+    <div id="loginError" style="color:#ff9d9d; font-size:13px; margin-top:8px;"></div>
   </div>
 
   <script>
@@ -94,13 +130,13 @@
       const email = document.getElementById("loginEmail").value.trim();
 
       if (!email) {
-        errorDiv.textContent = "Sahi email daalo";
+        errorDiv.textContent = "Please enter a valid email";
         return;
       }
 
       const btn = document.getElementById("sendOtpBtn");
       btn.disabled = true;
-      btn.textContent = "Bhej rahe hain...";
+      btn.textContent = "Sending...";
 
       try {
         const res = await fetch("/api/auth/send-otp", {
@@ -109,15 +145,15 @@
           body: JSON.stringify({ email }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "OTP bhejne mein error");
+        if (!res.ok) throw new Error(data.error || "Error sending OTP");
 
         document.getElementById("otpSection").style.display = "block";
-        infoDiv.textContent = "✅ OTP aapke email pe bhej diya hai (spam bhi check kar lena).";
-        btn.textContent = "Bhej Diya ✓";
+        infoDiv.textContent = "✅ OTP sent to your email (check spam folder too).";
+        btn.textContent = "Sent ✓";
       } catch (err) {
         errorDiv.textContent = "Error: " + err.message;
         btn.disabled = false;
-        btn.textContent = "OTP Bhejo";
+        btn.textContent = "Send OTP";
       }
     }
 
@@ -129,13 +165,13 @@
       const otp = document.getElementById("otpInput").value.trim();
 
       if (!otp) {
-        errorDiv.textContent = "OTP daalo";
+        errorDiv.textContent = "Please enter the OTP";
         return;
       }
 
       const btn = document.getElementById("verifyOtpBtn");
       btn.disabled = true;
-      btn.textContent = "Check kar rahe hain...";
+      btn.textContent = "Verifying...";
 
       try {
         // Backend se OTP verify karwao, badle mein custom token milega
@@ -145,7 +181,7 @@
           body: JSON.stringify({ email, otp }),
         });
         const otpData = await otpRes.json();
-        if (!otpRes.ok) throw new Error(otpData.error || "OTP galat hai");
+        if (!otpRes.ok) throw new Error(otpData.error || "Incorrect OTP");
 
         // Us custom token se Firebase mein sign-in complete karo
         const result = await auth.signInWithCustomToken(otpData.customToken);
@@ -158,7 +194,7 @@
           body: JSON.stringify({ idToken }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Login fail ho gaya");
+        if (!res.ok) throw new Error(data.error || "Login failed");
 
         localStorage.setItem("kundli_uid", data.uid);
         localStorage.setItem("kundli_wallet", data.user.wallet);
@@ -167,7 +203,7 @@
       } catch (err) {
         errorDiv.textContent = "Error: " + err.message;
         btn.disabled = false;
-        btn.textContent = "Verify Karo";
+        btn.textContent = "Verify";
       }
     }
 
@@ -256,29 +292,39 @@
 
   <!-- ============ MAIN APP (login ke baad dikhega) ============ -->
   <div id="mainApp" style="display:none;">
+    <div class="card" style="margin-bottom:16px;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-      <span class="hint" id="walletDisplay">Wallet: ₹0</span>
+      <span class="hint" id="walletDisplay" style="font-size:15px; color:#ffd77a; font-weight:600;">Wallet: ₹0</span>
       <span class="hint" style="cursor:pointer; text-decoration:underline;" onclick="logout()">Logout</span>
     </div>
 
-    <div style="display:flex; gap:8px; margin-bottom:16px;">
+    <div style="display:flex; gap:8px;">
       <button style="width:auto; margin-top:0; padding:8px 14px; font-size:13px;" onclick="addMoney(100)">+ ₹100</button>
       <button style="width:auto; margin-top:0; padding:8px 14px; font-size:13px;" onclick="addMoney(500)">+ ₹500</button>
       <button style="width:auto; margin-top:0; padding:8px 14px; font-size:13px;" onclick="addMoney(1000)">+ ₹1000</button>
     </div>
-    <div id="walletError" style="color:red; font-size:13px; margin-bottom:10px;"></div>
+    <div id="walletError" style="color:#ff9d9d; font-size:13px; margin-top:8px;"></div>
+    </div>
 
-  <label>Naam</label>
+    <div class="card">
+  <label>Full Name</label>
   <input id="name" placeholder="e.g. Rahul Sharma" />
 
   <label>Date of Birth</label>
   <input id="dob" type="date" min="1920-01-01" max="2026-12-31" />
-  <div class="hint">Date format: DD/MM/YYYY. Purani date ke liye calendar ke saal wale number pe click karke seedha type kar sakte ho</div>
+  <div class="hint">Click the year in the calendar to jump quickly to older dates</div>
 
   <label>Time of Birth</label>
-  <input id="tob" type="time" />
+  <div class="time-row">
+    <select id="tobHour"></select>
+    <select id="tobMinute"></select>
+    <select id="tobAmPm">
+      <option value="AM">AM</option>
+      <option value="PM">PM</option>
+    </select>
+  </div>
 
-  <label>Birth Place (Shehar)</label>
+  <label>Birth Place</label>
   <input id="place" placeholder="e.g. Delhi, Mumbai, Haldwani..." autocomplete="off" />
   <div id="suggestions" style="
     position: relative;
@@ -296,18 +342,20 @@
   <input type="hidden" id="lat" />
   <input type="hidden" id="lon" />
 
-  <button id="submitBtn" onclick="getHoroscope()">Horoscope Dekho</button>
+  <button id="submitBtn" onclick="getHoroscope()">View Horoscope</button>
+    </div>
 
   <div id="chartContainer" style="display:none; margin-top: 20px; text-align: center;">
-    <h3 style="font-size: 15px; color: #8a3b12;">Aapki Kundli (North Indian Style)</h3>
+    <h3 style="font-size: 15px; color: #ffd77a;">Your Kundli Chart (North Indian Style)</h3>
     <div id="chartSvgHolder" style="background:white; padding:12px; border-radius:10px; border:1px solid #eadfca;"></div>
   </div>
 
   <div id="result"></div>
 
+
   <!-- Chat Section - horoscope milne ke baad hi dikhega -->
-  <div id="chatSection" style="display:none; margin-top: 24px;">
-    <h3 style="font-size: 15px; color: #8a3b12;">💬 Apna sawal poocho <span style="font-size:12px; color:#999; font-weight:normal;">(₹5 per sawal)</span></h3>
+  <div id="chatSection" class="card" style="display:none; margin-top: 24px;">
+    <h3 style="font-size: 15px; color: #ffd77a;">💬 Ask a Question <span style="font-size:12px; color:#d8c3a0; font-weight:normal;">(₹5 per question)</span></h3>
     <div id="chatMessages" style="
       background: white;
       border: 1px solid #eadfca;
@@ -318,12 +366,28 @@
       margin-bottom: 10px;
     "></div>
     <div style="display: flex; gap: 8px;">
-      <input id="chatInput" placeholder="e.g. Is saal shaadi ka yog hai kya?" style="flex:1;" />
-      <button id="chatSendBtn" style="width:auto; margin-top:0; padding: 10px 16px;" onclick="sendChatMessage()">Bhejo</button>
+      <input id="chatInput" placeholder="e.g. Will I get married this year?" style="flex:1;" />
+      <button id="chatSendBtn" style="width:auto; margin-top:0; padding: 10px 16px;" onclick="sendChatMessage()">Send</button>
     </div>
   </div>
 
   <script>
+    // Time of Birth ke liye Hour/Minute dropdowns bharte hain (12-hour format, AM/PM ke saath)
+    const hourSelect = document.getElementById("tobHour");
+    const minuteSelect = document.getElementById("tobMinute");
+    for (let h = 1; h <= 12; h++) {
+      const opt = document.createElement("option");
+      opt.value = h;
+      opt.textContent = h;
+      hourSelect.appendChild(opt);
+    }
+    for (let m = 0; m < 60; m++) {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m.toString().padStart(2, "0");
+      minuteSelect.appendChild(opt);
+    }
+
     let selectedCity = null;
     let savedKundliData = null; // horoscope milne ke baad yahan save hoga, chat ke liye use hoga
     let savedName = "";
@@ -405,21 +469,29 @@
       const btn = document.getElementById("submitBtn");
       const resultDiv = document.getElementById("result");
 
+      // 12-hour (AM/PM) selection ko 24-hour "HH:mm" format mein convert karte hain
+      let hour12 = parseInt(document.getElementById("tobHour").value || "0", 10);
+      const minute = parseInt(document.getElementById("tobMinute").value || "0", 10);
+      const ampm = document.getElementById("tobAmPm").value;
+      let hour24 = hour12 % 12;
+      if (ampm === "PM") hour24 += 12;
+      const tob = hour24.toString().padStart(2, "0") + ":" + minute.toString().padStart(2, "0");
+
       const payload = {
         name: document.getElementById("name").value,
         dob: document.getElementById("dob").value,
-        tob: document.getElementById("tob").value,
+        tob: tob,
         lat: document.getElementById("lat").value,
         lon: document.getElementById("lon").value,
       };
 
-      if (!payload.name || !payload.dob || !payload.tob || !selectedCity) {
-        alert("Sab fields bharo, aur list se apna shehar select karo!");
+      if (!payload.name || !payload.dob || !selectedCity) {
+        alert("Please fill all fields and select your birth place from the list!");
         return;
       }
 
       btn.disabled = true;
-      btn.textContent = "Kundli banayi ja rahi hai...";
+      btn.textContent = "Generating your Kundli...";
       resultDiv.style.display = "none";
 
       try {
@@ -456,7 +528,7 @@
         resultDiv.textContent = "Error: " + err.message;
       } finally {
         btn.disabled = false;
-        btn.textContent = "Horoscope Dekho";
+        btn.textContent = "View Horoscope";
       }
     }
     async function sendChatMessage() {
