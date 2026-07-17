@@ -230,6 +230,90 @@ async function getPlanetPositions({ dob, tob, lat, lon, tz }) {
 }
 
 
+// --------------------------------------------------------
+// STEP 2D: Mangal Dosh (Manglik) check
+// Mars 1st, 2nd, 4th, 7th, 8th, 12th house mein ho to Mangal Dosh hota hai
+// --------------------------------------------------------
+async function getMangalDosha({ dob, tob, lat, lon, tz }) {
+  const token = await getProkeralaToken();
+
+  const timeWithSeconds = tob.length === 5 ? `${tob}:00` : tob;
+  const datetime = `${dob}T${timeWithSeconds}${tz || "+05:30"}`;
+
+  const url = new URL("https://api.prokerala.com/v2/astrology/mangal-dosha");
+  url.searchParams.set("ayanamsa", "1");
+  url.searchParams.set("coordinates", `${lat},${lon}`);
+  url.searchParams.set("datetime", datetime);
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Mangal Dosha API ne ye error diya:", errorBody);
+    throw new Error(
+      "Mangal Dosha check karne mein error: " + response.status + " - " + errorBody
+    );
+  }
+
+  return response.json();
+}
+
+// --------------------------------------------------------
+// STEP 2E: Daily Horoscope — user ki Chandra Rashi (Moon sign) ke hisaab se
+// aaj ke din ka horoscope Claude se likhwate hain
+// --------------------------------------------------------
+async function getDailyHoroscopeFromClaude({ name, moonRashi, nakshatra }) {
+  const today = new Date().toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+
+  const prompt = `Tum ek anubhavi (experienced) Vedic astrologer ho jo Hinglish (Hindi + English mix) mein
+baat karte ho, jaisa Astrotalk app pe astrologers karte hain.
+
+Neeche ek vyakti ki details di gayi hain:
+Naam: ${name}
+Chandra Rashi (Moon Sign): ${moonRashi || "pata nahi"}
+Janma Nakshatra: ${nakshatra || "pata nahi"}
+Aaj ki tareekh: ${today}
+
+Is Chandra Rashi ke aadhar par AAJ (${today}) ke din ka ek daily horoscope likho jisme ho:
+1. Aaj ka overall mood/energy (1-2 lines)
+2. Career/Kaam ke liye aaj kaisa din rahega
+3. Health aur Relationships ke liye ek chhota tip
+4. Aaj ka lucky color ya number (optional, chhota sa mention)
+
+Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone friendly aur positive rakho, 5-6 lines se zyada mat likho.`;
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-5",
+      max_tokens: 400,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Daily horoscope Claude error:", errorBody);
+    throw new Error("Claude API error: " + response.status + " - " + errorBody);
+  }
+
+  const data = await response.json();
+  const textBlock = data.content.find((c) => c.type === "text");
+  return textBlock ? textBlock.text : "";
+}
+
 async function getCareerHoroscopeFromClaude({ name, kundliData }) {
   const prompt = `Tum ek anubhavi (experienced) Vedic astrologer ho jo Hinglish (Hindi + English mix) mein
 baat karte ho, jaisa Astrotalk app pe astrologers karte hain.
@@ -691,6 +775,14 @@ app.post("/api/horoscope", async (req, res) => {
       console.error("Planet position fetch fail hua, lekin aage badh rahe hain:", planetErr.message);
     }
 
+    // 2C. Mangal Dosh (Manglik) check bhi karo
+    let mangalDosha = null;
+    try {
+      mangalDosha = await getMangalDosha({ dob, tob, lat, lon });
+    } catch (mangalErr) {
+      console.error("Mangal Dosha fetch fail hua, lekin aage badh rahe hain:", mangalErr.message);
+    }
+
     // 3. Us data ko Claude se samjhwao (career horoscope banwao)
     const careerHoroscope = await getCareerHoroscopeFromClaude({
       name,
@@ -703,8 +795,28 @@ app.post("/api/horoscope", async (req, res) => {
       kundliRaw: kundliData,
       chartSvg,
       planetPositions,
+      mangalDosha,
       careerHoroscope,
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --------------------------------------------------------
+// DAILY HOROSCOPE ENDPOINT: User ki Chandra Rashi ke hisaab se aaj ka horoscope
+// --------------------------------------------------------
+app.post("/api/daily-horoscope", async (req, res) => {
+  try {
+    const { name, moonRashi, nakshatra } = req.body;
+
+    if (!name || !moonRashi) {
+      return res.status(400).json({ error: "name aur moonRashi zaroori hain" });
+    }
+
+    const dailyHoroscope = await getDailyHoroscopeFromClaude({ name, moonRashi, nakshatra });
+    res.json({ success: true, dailyHoroscope });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

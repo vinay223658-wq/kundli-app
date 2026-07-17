@@ -7,6 +7,8 @@
 <title>Kundli Career Horoscope</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -373,7 +375,24 @@
     <div id="planetTableHolder" style="overflow-x:auto;"></div>
   </div>
 
+  <div id="mangalDoshaContainer" class="card" style="display:none; margin-top: 20px;">
+    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">♂️ Mangal Dosh (Manglik) Check</h3>
+    <div id="mangalDoshaHolder"></div>
+  </div>
+
   <div id="result"></div>
+
+  <!-- PDF Download button - horoscope milne ke baad hi dikhega -->
+  <div id="pdfDownloadSection" style="display:none; margin-top: 16px; text-align:center;">
+    <button id="pdfDownloadBtn" onclick="downloadKundliPdf()" style="background: linear-gradient(135deg, #3a7d5c, #2c5f47);">📄 Download Kundli PDF</button>
+  </div>
+
+  <!-- Daily Horoscope Section - horoscope milne ke baad hi dikhega -->
+  <div id="dailyHoroscopeSection" class="card" style="display:none; margin-top: 16px;">
+    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">🌞 Aaj Ka Rashifal (Daily Horoscope)</h3>
+    <button id="dailyHoroscopeBtn" onclick="getDailyHoroscope()" style="margin-top:0;">Aaj Ka Horoscope Dekho</button>
+    <div id="dailyHoroscopeResult" style="display:none; margin-top:12px; background:white; border-radius:10px; padding:12px; color:#2b2b2b; font-size:14px; line-height:1.5;"></div>
+  </div>
 
   <!-- Chat Section - horoscope milne ke baad hi dikhega -->
   <div id="chatSection" class="card" style="display:none; margin-top: 24px;">
@@ -529,6 +548,17 @@
     let savedKundliData = null; // horoscope milne ke baad yahan save hoga, chat ke liye use hoga
     let savedName = "";
     let chatHistory = []; // conversation history taaki bot pichli baat yaad rakhe
+
+    // PDF aur Daily Horoscope ke liye extra saved data
+    let savedChartSvg = null;
+    let savedPlanetPositions = null;
+    let savedMangalDosha = null;
+    let savedCareerHoroscope = "";
+    let savedDob = "";
+    let savedTob = "";
+    let savedPlaceName = "";
+    let savedMoonRashi = "";
+    let savedMoonNakshatra = "";
 
     // Ye function kisi bhi place-search input pe attach ho sakta hai
     // (main form ke liye, aur baad mein Kundli Matching ke boy/girl fields ke liye bhi)
@@ -824,6 +854,50 @@
         </table>
       `;
       container.style.display = "block";
+
+      // Chandra Rashi (Moon sign) aur Nakshatra nikaal lete hain Daily Horoscope ke liye
+      const moonEntry = planets.find((p) => {
+        const n = (p.name || p.planet || "").toLowerCase();
+        return n.includes("moon") || n.includes("chandra");
+      });
+      if (moonEntry) {
+        savedMoonRashi = moonEntry.rasi?.name || moonEntry.rashi?.name || "";
+        savedMoonNakshatra = moonEntry.nakshatra?.name || "";
+      }
+    }
+
+    function renderMangalDosha(mangalDosha) {
+      const container = document.getElementById("mangalDoshaContainer");
+      const holder = document.getElementById("mangalDoshaHolder");
+
+      // Prokerala response ka structure thoda alag ho sakta hai, isliye kai jagah try karte hain
+      const result = mangalDosha?.data || mangalDosha?.result || mangalDosha || null;
+      const hasDosha =
+        result?.has_dosha ?? result?.has_mangal_dosha ?? result?.manglik_status ?? null;
+      const description = result?.description || result?.mangal_dosha_present || "";
+
+      if (!mangalDosha || hasDosha === null || hasDosha === undefined) {
+        container.style.display = "none";
+        return;
+      }
+
+      const isManglik = hasDosha === true || hasDosha === "yes" || hasDosha === "Yes";
+
+      holder.innerHTML = `
+        <div style="
+          background: ${isManglik ? "#fdeceb" : "#eaf7ee"};
+          border: 1px solid ${isManglik ? "#e8b3ac" : "#b7dfc4"};
+          border-radius: 10px;
+          padding: 12px;
+          color: #2b2b2b;
+        ">
+          <div style="font-weight:600; font-size:14px; margin-bottom:6px;">
+            ${isManglik ? "⚠️ Aap Manglik hain (Mangal Dosh mojood hai)" : "✅ Aap Manglik nahi hain (Koi Mangal Dosh nahi)"}
+          </div>
+          ${description ? `<div style="font-size:13px; color:#444; line-height:1.5;">${description}</div>` : ""}
+        </div>
+      `;
+      container.style.display = "block";
     }
 
     async function getHoroscope() {
@@ -872,6 +946,9 @@
         // Planet positions (Graha) table dikhao
         renderPlanetTable(data.planetPositions);
 
+        // Mangal Dosh (Manglik) result dikhao
+        renderMangalDosha(data.mangalDosha);
+
         resultDiv.style.display = "block";
         resultDiv.textContent = data.careerHoroscope;
 
@@ -881,6 +958,20 @@
         chatHistory = [];
         document.getElementById("chatMessages").innerHTML = "";
         document.getElementById("chatSection").style.display = "block";
+
+        // PDF aur Daily Horoscope ke liye sab kuch save karo
+        savedChartSvg = data.chartSvg;
+        savedPlanetPositions = data.planetPositions;
+        savedMangalDosha = data.mangalDosha;
+        savedCareerHoroscope = data.careerHoroscope;
+        savedDob = payload.dob;
+        savedTob = tob;
+        savedPlaceName = selectedCity ? selectedCity.name : "";
+
+        document.getElementById("pdfDownloadSection").style.display = "block";
+        document.getElementById("dailyHoroscopeSection").style.display = "block";
+        document.getElementById("dailyHoroscopeResult").style.display = "none";
+        document.getElementById("dailyHoroscopeResult").textContent = "";
       } catch (err) {
         resultDiv.style.display = "block";
         resultDiv.textContent = "Error: " + err.message;
@@ -889,6 +980,190 @@
         btn.textContent = "View Horoscope";
       }
     }
+    // ============ DAILY HOROSCOPE ============
+    async function getDailyHoroscope() {
+      const btn = document.getElementById("dailyHoroscopeBtn");
+      const resultEl = document.getElementById("dailyHoroscopeResult");
+
+      btn.disabled = true;
+      btn.textContent = "Loading...";
+
+      try {
+        const res = await fetch("/api/daily-horoscope", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: savedName,
+            moonRashi: savedMoonRashi,
+            nakshatra: savedMoonNakshatra,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Kuch galat ho gaya");
+
+        resultEl.textContent = data.dailyHoroscope;
+        resultEl.style.display = "block";
+      } catch (err) {
+        resultEl.textContent = "Error: " + err.message;
+        resultEl.style.display = "block";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Aaj Ka Horoscope Dekho";
+      }
+    }
+
+    // ============ PDF KUNDLI DOWNLOAD ============
+    // SVG string ko PNG image (data URL) mein convert karta hai taaki PDF mein daal sakein
+    function svgToPngDataUrl(svgString, width = 500, height = 500) {
+      return new Promise((resolve, reject) => {
+        try {
+          const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+          const url = URL.createObjectURL(svgBlob);
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+            URL.revokeObjectURL(url);
+            resolve(canvas.toDataURL("image/png"));
+          };
+          img.onerror = (e) => {
+            URL.revokeObjectURL(url);
+            reject(e);
+          };
+          img.src = url;
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+
+    async function downloadKundliPdf() {
+      const btn = document.getElementById("pdfDownloadBtn");
+      btn.disabled = true;
+      btn.textContent = "PDF banaya ja raha hai...";
+
+      try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: "pt", format: "a4" });
+        const pageWidth = doc.internal.pageSize.getWidth();
+        let y = 40;
+
+        // Title
+        doc.setFontSize(18);
+        doc.setTextColor(181, 80, 26);
+        doc.text("Kundli Report", pageWidth / 2, y, { align: "center" });
+        y += 26;
+
+        // Basic details
+        doc.setFontSize(11);
+        doc.setTextColor(40, 40, 40);
+        doc.text(`Name: ${savedName}`, 40, y); y += 16;
+        doc.text(`Date of Birth: ${savedDob}`, 40, y); y += 16;
+        doc.text(`Time of Birth: ${savedTob}`, 40, y); y += 16;
+        doc.text(`Birth Place: ${savedPlaceName}`, 40, y); y += 20;
+
+        // Chart image (agar mila ho)
+        if (savedChartSvg) {
+          try {
+            const pngDataUrl = await svgToPngDataUrl(savedChartSvg, 500, 500);
+            const imgSize = 220;
+            doc.setFontSize(13);
+            doc.text("Kundli Chart (North Indian Style)", 40, y);
+            y += 10;
+            doc.addImage(pngDataUrl, "PNG", 40, y, imgSize, imgSize);
+            y += imgSize + 20;
+          } catch (e) {
+            console.error("Chart PDF image error:", e);
+          }
+        }
+
+        // Naya page agar zaroorat ho
+        if (y > 650) { doc.addPage(); y = 40; }
+
+        // Planet positions table
+        const planets =
+          savedPlanetPositions?.data?.planet_position ||
+          savedPlanetPositions?.planet_position ||
+          savedPlanetPositions?.data ||
+          null;
+
+        if (planets && Array.isArray(planets) && planets.length > 0) {
+          doc.setFontSize(13);
+          doc.setTextColor(181, 80, 26);
+          doc.text("Graha Positions (Planetary Details)", 40, y);
+          y += 10;
+
+          const rows = planets.map((p) => [
+            p.name || p.planet || "-",
+            p.rasi?.name || p.rashi?.name || "-",
+            p.nakshatra?.name || "-",
+            String(p.nakshatra?.pada ?? "-"),
+            p.degree !== undefined ? Number(p.degree).toFixed(2) + "°" : "-",
+            p.is_retrograde ? "Yes" : "No",
+          ]);
+
+          doc.autoTable({
+            startY: y + 6,
+            head: [["Graha", "Rashi", "Nakshatra", "Pada", "Degree", "Retro"]],
+            body: rows,
+            margin: { left: 40, right: 40 },
+            styles: { fontSize: 9 },
+            headStyles: { fillColor: [217, 131, 36] },
+          });
+          y = doc.lastAutoTable.finalY + 20;
+        }
+
+        if (y > 650) { doc.addPage(); y = 40; }
+
+        // Mangal Dosha
+        const mResult = savedMangalDosha?.data || savedMangalDosha?.result || savedMangalDosha || null;
+        const hasDosha = mResult?.has_dosha ?? mResult?.has_mangal_dosha ?? mResult?.manglik_status ?? null;
+        if (hasDosha !== null && hasDosha !== undefined) {
+          const isManglik = hasDosha === true || hasDosha === "yes" || hasDosha === "Yes";
+          doc.setFontSize(13);
+          doc.setTextColor(181, 80, 26);
+          doc.text("Mangal Dosh (Manglik) Check", 40, y);
+          y += 16;
+          doc.setFontSize(11);
+          doc.setTextColor(40, 40, 40);
+          const doshaLine = isManglik ? "Manglik: Yes (Mangal Dosh present)" : "Manglik: No (No Mangal Dosh)";
+          doc.text(doshaLine, 40, y);
+          y += 18;
+        }
+
+        if (y > 650) { doc.addPage(); y = 40; }
+
+        // Career horoscope text (word-wrapped)
+        if (savedCareerHoroscope) {
+          doc.setFontSize(13);
+          doc.setTextColor(181, 80, 26);
+          doc.text("Career Horoscope", 40, y);
+          y += 16;
+          doc.setFontSize(10.5);
+          doc.setTextColor(40, 40, 40);
+          const wrapped = doc.splitTextToSize(savedCareerHoroscope, pageWidth - 80);
+          wrapped.forEach((line) => {
+            if (y > 780) { doc.addPage(); y = 40; }
+            doc.text(line, 40, y);
+            y += 14;
+          });
+        }
+
+        doc.save(`${savedName || "Kundli"}_Report.pdf`);
+      } catch (err) {
+        console.error("PDF generation error:", err);
+        alert("PDF banane mein error aayi: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "📄 Download Kundli PDF";
+      }
+    }
+
     async function sendChatMessage() {
       const input = document.getElementById("chatInput");
       const messagesBox = document.getElementById("chatMessages");
