@@ -169,9 +169,9 @@ async function getKundliData({ dob, tob, lat, lon, tz }) {
 }
 
 // --------------------------------------------------------
-// STEP 2B: North Indian style Kundli Chart (SVG) fetch karna
+// STEP 2B: Kundli Chart (SVG) fetch karna — North ya South Indian style
 // --------------------------------------------------------
-async function getKundliChartSvg({ dob, tob, lat, lon, tz }) {
+async function getKundliChartSvg({ dob, tob, lat, lon, tz, chartStyle }) {
   const token = await getProkeralaToken();
 
   const timeWithSeconds = tob.length === 5 ? `${tob}:00` : tob;
@@ -182,7 +182,7 @@ async function getKundliChartSvg({ dob, tob, lat, lon, tz }) {
   url.searchParams.set("coordinates", `${lat},${lon}`);
   url.searchParams.set("datetime", datetime);
   url.searchParams.set("chart_type", "rasi");
-  url.searchParams.set("chart_style", "north-indian");
+  url.searchParams.set("chart_style", chartStyle || "north-indian");
   url.searchParams.set("format", "svg");
 
   const response = await fetch(url.toString(), {
@@ -261,33 +261,108 @@ async function getMangalDosha({ dob, tob, lat, lon, tz }) {
 }
 
 // --------------------------------------------------------
-// STEP 2E: Daily Horoscope — user ki Chandra Rashi (Moon sign) ke hisaab se
-// aaj ke din ka horoscope Claude se likhwate hain
+// STEP 2D-2: Kaal Sarp Dosha check
+// Jab saare grahon Rahu-Ketu ke ek hi taraf ho, tab ye dosh hota hai
 // --------------------------------------------------------
-async function getDailyHoroscopeFromClaude({ name, moonRashi, nakshatra }) {
-  const today = new Date().toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "Asia/Kolkata",
+async function getKaalSarpDosha({ dob, tob, lat, lon, tz }) {
+  const token = await getProkeralaToken();
+
+  const timeWithSeconds = tob.length === 5 ? `${tob}:00` : tob;
+  const datetime = `${dob}T${timeWithSeconds}${tz || "+05:30"}`;
+
+  const url = new URL("https://api.prokerala.com/v2/astrology/kaal-sarp-dosha");
+  url.searchParams.set("ayanamsa", "1");
+  url.searchParams.set("coordinates", `${lat},${lon}`);
+  url.searchParams.set("datetime", datetime);
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
   });
 
-  const prompt = `Tum ek anubhavi (experienced) Vedic astrologer ho jo Hinglish (Hindi + English mix) mein
-baat karte ho, jaisa Astrotalk app pe astrologers karte hain.
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Kaal Sarp Dosha API ne ye error diya:", errorBody);
+    throw new Error(
+      "Kaal Sarp Dosha check karne mein error: " + response.status + " - " + errorBody
+    );
+  }
+
+  return response.json();
+}
+
+// --------------------------------------------------------
+// Language codes ko poora naam do — Claude prompts mein use karne ke liye
+// --------------------------------------------------------
+const LANGUAGE_NAMES = {
+  hindi: "Hinglish (Hindi + English mix, jaisa Astrotalk pe astrologers baat karte hain)",
+  english: "plain English",
+  tamil: "Tamil (தமிழ்)",
+  telugu: "Telugu (తెలుగు)",
+  kannada: "Kannada (ಕನ್ನಡ)",
+  bengali: "Bengali (বাংলা)",
+  marathi: "Marathi (मराठी)",
+  gujarati: "Gujarati (ગુજરાતી)",
+};
+
+function getLanguageInstruction(language) {
+  const langName = LANGUAGE_NAMES[language] || LANGUAGE_NAMES.hindi;
+  return `Jawab ${langName} mein likho. Agar language Hinglish ke alawa kuch aur hai, to us bhasha ki script mein hi shuddh likho (thoda bahut common English words chalenge, jaise astrology terms, lekin poora jawab us bhasha mein hona chahiye).`;
+}
+
+
+async function getDailyHoroscopeFromClaude({ name, moonRashi, nakshatra, period, language }) {
+  const now = new Date();
+  const todayStr = now.toLocaleDateString("en-IN", {
+    day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata",
+  });
+
+  // Period ke hisaab se time-range aur instruction badalte hain
+  const periodConfig = {
+    daily: {
+      label: `AAJ (${todayStr})`,
+      instruction: "aaj ke din ka",
+      maxTokens: 400,
+      lines: "5-6 lines se zyada mat likho",
+    },
+    weekly: {
+      label: `is hafte (${todayStr} se agle 7 din)`,
+      instruction: "is poore hafte ka",
+      maxTokens: 500,
+      lines: "7-8 lines mein rakho",
+    },
+    monthly: {
+      label: `is mahine (${now.toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "Asia/Kolkata" })})`,
+      instruction: "is poore mahine ka",
+      maxTokens: 600,
+      lines: "9-10 lines mein rakho",
+    },
+    yearly: {
+      label: `is saal (${now.getFullYear()})`,
+      instruction: "is poore saal ka",
+      maxTokens: 700,
+      lines: "12-14 lines mein rakho, alag alag mahino/quarters ka thoda mention karte hue",
+    },
+  };
+  const cfg = periodConfig[period] || periodConfig.daily;
+  const langInstruction = getLanguageInstruction(language);
+
+  const prompt = `Tum ek anubhavi (experienced) Vedic astrologer ho, jaisa Astrotalk app pe astrologers baat karte hain.
 
 Neeche ek vyakti ki details di gayi hain:
 Naam: ${name}
 Chandra Rashi (Moon Sign): ${moonRashi || "pata nahi"}
 Janma Nakshatra: ${nakshatra || "pata nahi"}
-Aaj ki tareekh: ${today}
+Time period: ${cfg.label}
 
-Is Chandra Rashi ke aadhar par AAJ (${today}) ke din ka ek daily horoscope likho jisme ho:
-1. Aaj ka overall mood/energy (1-2 lines)
-2. Career/Kaam ke liye aaj kaisa din rahega
-3. Health aur Relationships ke liye ek chhota tip
-4. Aaj ka lucky color ya number (optional, chhota sa mention)
+Is Chandra Rashi ke aadhar par ${cfg.instruction} horoscope likho jisme ho:
+1. Overall mood/energy
+2. Career/Kaam ke liye kaisa rahega
+3. Health aur Relationships ke liye tip
+4. Lucky color ya number (optional, chhota sa mention)
 
-Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone friendly aur positive rakho, 5-6 lines se zyada mat likho.`;
+${langInstruction}
+
+Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone friendly aur positive rakho, ${cfg.lines}.`;
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -298,7 +373,7 @@ Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone friendly aur
     },
     body: JSON.stringify({
       model: "claude-sonnet-5",
-      max_tokens: 400,
+      max_tokens: cfg.maxTokens,
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -314,9 +389,10 @@ Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone friendly aur
   return textBlock ? textBlock.text : "";
 }
 
-async function getCareerHoroscopeFromClaude({ name, kundliData }) {
-  const prompt = `Tum ek anubhavi (experienced) Vedic astrologer ho jo Hinglish (Hindi + English mix) mein
-baat karte ho, jaisa Astrotalk app pe astrologers karte hain.
+
+async function getCareerHoroscopeFromClaude({ name, kundliData, language }) {
+  const langInstruction = getLanguageInstruction(language);
+  const prompt = `Tum ek anubhavi (experienced) Vedic astrologer ho, jaisa Astrotalk app pe astrologers baat karte hain.
 
 Neeche ek vyakti ki kundli ka raw astrological data diya gaya hai:
 
@@ -328,6 +404,8 @@ Is data ke aadhar par ek friendly, easy-to-samajhne wala paragraph likho jisme h
 2. Career ke liye kaunse strengths hain
 3. Career mein kis tarah ke opportunities aane wale hain (agle 6-12 mahine)
 4. Ek chhota practical suggestion
+
+${langInstruction}
 
 Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur motivating rakho.`;
 
@@ -418,9 +496,9 @@ async function getKundliMatch({ boy, girl }) {
   return response.json();
 }
 
-async function getMatchSummaryFromClaude({ boyName, girlName, matchData }) {
-  const prompt = `Tum ek anubhavi (experienced) Vedic astrologer ho jo Hinglish (Hindi + English mix) mein
-baat karte ho, jaisa Astrotalk app pe astrologers karte hain. Ye "Kundli Matching" (Guna Milan) ka
+async function getMatchSummaryFromClaude({ boyName, girlName, matchData, language }) {
+  const langInstruction = getLanguageInstruction(language);
+  const prompt = `Tum ek anubhavi (experienced) Vedic astrologer ho, jaisa Astrotalk app pe astrologers baat karte hain. Ye "Kundli Matching" (Guna Milan) ka
 raw astrological data hai do logon ke beech shaadi compatibility check karne ke liye.
 
 Ladka: ${boyName}
@@ -432,6 +510,8 @@ Is data ke aadhar par ek friendly, easy-to-samajhne wala paragraph likho jisme h
 2. Strengths — dono ki kundli mein kya achha match ho raha hai
 3. Agar koi dosh/concern hai to usko gently mention karo (scare mat karo, balanced tone rakho)
 4. Ek chhota practical suggestion (jaise pandit se consult karne ka)
+
+${langInstruction}
 
 Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur balanced rakho — na bahut positive na bahut negative, jo data mein hai wahi bolo.`;
 
@@ -464,9 +544,9 @@ Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur bal
 // --------------------------------------------------------
 // STEP 4: Chatbot — user apne sawal pooch sake apni kundli ke baare mein
 // --------------------------------------------------------
-async function askAstrologerBot({ name, kundliData, question, history }) {
-  const systemPrompt = `Tum ek anubhavi (experienced), friendly Vedic astrologer ho jo Hinglish
-(Hindi + English mix) mein baat karte ho, bilkul Astrotalk app ke astrologers jaisa.
+async function askAstrologerBot({ name, kundliData, question, history, language }) {
+  const langInstruction = getLanguageInstruction(language);
+  const systemPrompt = `Tum ek anubhavi (experienced), friendly Vedic astrologer ho, bilkul Astrotalk app ke astrologers jaisa.
 
 Is user ki kundli ka raw data:
 Naam: ${name}
@@ -476,7 +556,8 @@ Rules:
 - User ke sawaalon ka jawab isi kundli data ke aadhar par do
 - Jawab chhota, friendly aur samajhne layak rakho (3-5 lines max, jab tak user detail na maange)
 - Agar sawal astrology se related na ho, to politely bata do ki tum sirf astrology/career/relationship guidance de sakte ho
-- Kabhi medical, legal, ya financial guarantee mat do — sirf astrological perspective do`;
+- Kabhi medical, legal, ya financial guarantee mat do — sirf astrological perspective do
+- ${langInstruction}`;
 
   // Pichli conversation history ko messages format mein convert karte hain
   const messages = (history || []).map((h) => ({
@@ -747,7 +828,7 @@ app.post("/api/auth/verify", async (req, res) => {
 // --------------------------------------------------------
 app.post("/api/horoscope", async (req, res) => {
   try {
-    const { name, dob, tob, lat, lon } = req.body;
+    const { name, dob, tob, lat, lon, language } = req.body;
 
     if (!name || !dob || !tob || !lat || !lon) {
       return res.status(400).json({
@@ -758,13 +839,19 @@ app.post("/api/horoscope", async (req, res) => {
     // 1. Real kundli data lao
     const kundliData = await getKundliData({ dob, tob, lat, lon });
 
-    // 2. North Indian style chart (SVG) bhi lao
+    // 2. North Indian aur South Indian dono style chart (SVG) lao
     let chartSvg = null;
+    let chartSvgSouth = null;
     try {
-      chartSvg = await getKundliChartSvg({ dob, tob, lat, lon });
+      chartSvg = await getKundliChartSvg({ dob, tob, lat, lon, chartStyle: "north-indian" });
     } catch (chartErr) {
       // Agar chart fail ho jaye to bhi horoscope text dikhana band mat karo
-      console.error("Chart fetch fail hua, lekin aage badh rahe hain:", chartErr.message);
+      console.error("North chart fetch fail hua, lekin aage badh rahe hain:", chartErr.message);
+    }
+    try {
+      chartSvgSouth = await getKundliChartSvg({ dob, tob, lat, lon, chartStyle: "south-indian" });
+    } catch (chartErr) {
+      console.error("South chart fetch fail hua, lekin aage badh rahe hain:", chartErr.message);
     }
 
     // 2B. Grahon (planets) ki exact position bhi lao — pandit logon ke liye
@@ -783,10 +870,19 @@ app.post("/api/horoscope", async (req, res) => {
       console.error("Mangal Dosha fetch fail hua, lekin aage badh rahe hain:", mangalErr.message);
     }
 
+    // 2D. Kaal Sarp Dosha check bhi karo
+    let kaalSarpDosha = null;
+    try {
+      kaalSarpDosha = await getKaalSarpDosha({ dob, tob, lat, lon });
+    } catch (kaalErr) {
+      console.error("Kaal Sarp Dosha fetch fail hua, lekin aage badh rahe hain:", kaalErr.message);
+    }
+
     // 3. Us data ko Claude se samjhwao (career horoscope banwao)
     const careerHoroscope = await getCareerHoroscopeFromClaude({
       name,
       kundliData,
+      language,
     });
 
     // 4. Sab kuch frontend ko bhejo
@@ -794,8 +890,10 @@ app.post("/api/horoscope", async (req, res) => {
       success: true,
       kundliRaw: kundliData,
       chartSvg,
+      chartSvgSouth,
       planetPositions,
       mangalDosha,
+      kaalSarpDosha,
       careerHoroscope,
     });
   } catch (err) {
@@ -809,13 +907,15 @@ app.post("/api/horoscope", async (req, res) => {
 // --------------------------------------------------------
 app.post("/api/daily-horoscope", async (req, res) => {
   try {
-    const { name, moonRashi, nakshatra } = req.body;
+    const { name, moonRashi, nakshatra, period, language } = req.body;
 
     if (!name || !moonRashi) {
       return res.status(400).json({ error: "name aur moonRashi zaroori hain" });
     }
 
-    const dailyHoroscope = await getDailyHoroscopeFromClaude({ name, moonRashi, nakshatra });
+    const dailyHoroscope = await getDailyHoroscopeFromClaude({
+      name, moonRashi, nakshatra, period, language,
+    });
     res.json({ success: true, dailyHoroscope });
   } catch (err) {
     console.error(err);
@@ -846,7 +946,7 @@ app.get("/api/panchang", async (req, res) => {
 // --------------------------------------------------------
 app.post("/api/match", async (req, res) => {
   try {
-    const { boy, girl } = req.body;
+    const { boy, girl, language } = req.body;
 
     if (!boy?.name || !boy?.dob || !boy?.tob || !boy?.lat || !boy?.lon) {
       return res.status(400).json({ error: "Ladke ki poori details (naam, DOB, TOB, place) zaroori hain" });
@@ -861,6 +961,7 @@ app.post("/api/match", async (req, res) => {
       boyName: boy.name,
       girlName: girl.name,
       matchData,
+      language,
     });
 
     res.json({ success: true, matchData, summary });
@@ -878,7 +979,7 @@ const CHAT_PRICE = 5;
 
 app.post("/api/chat", async (req, res) => {
   try {
-    const { uid, name, kundliData, question, history } = req.body;
+    const { uid, name, kundliData, question, history, language } = req.body;
 
     if (!uid || !name || !kundliData || !question) {
       return res.status(400).json({
@@ -902,7 +1003,7 @@ app.post("/api/chat", async (req, res) => {
     const newWallet = currentWallet - CHAT_PRICE;
     await userRef.update({ wallet: newWallet });
 
-    const answer = await askAstrologerBot({ name, kundliData, question, history });
+    const answer = await askAstrologerBot({ name, kundliData, question, history, language });
 
     res.json({ success: true, answer, newWallet });
   } catch (err) {

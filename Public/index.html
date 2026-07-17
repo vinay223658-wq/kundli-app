@@ -309,6 +309,20 @@
       <span class="hint" style="cursor:pointer; text-decoration:underline;" onclick="logout()">Logout</span>
     </div>
 
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px;">🌐 Language / भाषा</label>
+      <select id="languageSelect" onchange="selectedLanguage = this.value;">
+        <option value="hindi" selected>Hindi (Hinglish)</option>
+        <option value="english">English</option>
+        <option value="tamil">Tamil (தமிழ்)</option>
+        <option value="telugu">Telugu (తెలుగు)</option>
+        <option value="kannada">Kannada (ಕನ್ನಡ)</option>
+        <option value="bengali">Bengali (বাংলা)</option>
+        <option value="marathi">Marathi (मराठी)</option>
+        <option value="gujarati">Gujarati (ગુજરાતી)</option>
+      </select>
+    </div>
+
     <div style="display:flex; gap:8px;">
       <button style="width:auto; margin-top:0; padding:8px 14px; font-size:13px;" onclick="addMoney(100)">+ ₹100</button>
       <button style="width:auto; margin-top:0; padding:8px 14px; font-size:13px;" onclick="addMoney(500)">+ ₹500</button>
@@ -366,7 +380,11 @@
     </div>
 
   <div id="chartContainer" style="display:none; margin-top: 20px; text-align: center;">
-    <h3 style="font-size: 15px; color: #ffd77a;">Your Kundli Chart (North Indian Style)</h3>
+    <h3 style="font-size: 15px; color: #ffd77a;">Your Kundli Chart</h3>
+    <div style="display:flex; gap:8px; justify-content:center; margin-bottom:10px;">
+      <button id="chartStyleNorthBtn" onclick="switchChartStyle('north')" style="width:auto; margin-top:0; padding:6px 14px; font-size:12px;">North Indian</button>
+      <button id="chartStyleSouthBtn" onclick="switchChartStyle('south')" style="width:auto; margin-top:0; padding:6px 14px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">South Indian</button>
+    </div>
     <div id="chartSvgHolder" style="background:white; padding:12px; border-radius:10px; border:1px solid #eadfca;"></div>
   </div>
 
@@ -380,6 +398,11 @@
     <div id="mangalDoshaHolder"></div>
   </div>
 
+  <div id="kaalSarpDoshaContainer" class="card" style="display:none; margin-top: 20px;">
+    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">🐍 Kaal Sarp Dosha Check</h3>
+    <div id="kaalSarpDoshaHolder"></div>
+  </div>
+
   <div id="result"></div>
 
   <!-- PDF Download button - horoscope milne ke baad hi dikhega -->
@@ -387,10 +410,15 @@
     <button id="pdfDownloadBtn" onclick="downloadKundliPdf()" style="background: linear-gradient(135deg, #3a7d5c, #2c5f47);">📄 Download Kundli PDF</button>
   </div>
 
-  <!-- Daily Horoscope Section - horoscope milne ke baad hi dikhega -->
+  <!-- Daily/Weekly/Monthly/Yearly Horoscope Section - horoscope milne ke baad hi dikhega -->
   <div id="dailyHoroscopeSection" class="card" style="display:none; margin-top: 16px;">
-    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">🌞 Aaj Ka Rashifal (Daily Horoscope)</h3>
-    <button id="dailyHoroscopeBtn" onclick="getDailyHoroscope()" style="margin-top:0;">Aaj Ka Horoscope Dekho</button>
+    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">🌞 Rashifal (Horoscope)</h3>
+    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+      <button id="periodBtnDaily" onclick="getDailyHoroscope('daily')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px;">Aaj</button>
+      <button id="periodBtnWeekly" onclick="getDailyHoroscope('weekly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Hafte</button>
+      <button id="periodBtnMonthly" onclick="getDailyHoroscope('monthly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Mahine</button>
+      <button id="periodBtnYearly" onclick="getDailyHoroscope('yearly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Saal</button>
+    </div>
     <div id="dailyHoroscopeResult" style="display:none; margin-top:12px; background:white; border-radius:10px; padding:12px; color:#2b2b2b; font-size:14px; line-height:1.5;"></div>
   </div>
 
@@ -545,14 +573,18 @@
     }
 
     let selectedCity = null;
+    let selectedLanguage = "hindi"; // top ke dropdown se update hota hai
     let savedKundliData = null; // horoscope milne ke baad yahan save hoga, chat ke liye use hoga
     let savedName = "";
     let chatHistory = []; // conversation history taaki bot pichli baat yaad rakhe
 
     // PDF aur Daily Horoscope ke liye extra saved data
     let savedChartSvg = null;
+    let savedChartSvgSouth = null;
+    let currentChartStyle = "north";
     let savedPlanetPositions = null;
     let savedMangalDosha = null;
+    let savedKaalSarpDosha = null;
     let savedCareerHoroscope = "";
     let savedDob = "";
     let savedTob = "";
@@ -709,7 +741,7 @@
         const res = await fetch("/api/match", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ boy, girl }),
+          body: JSON.stringify({ boy, girl, language: selectedLanguage }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Something went wrong");
@@ -900,6 +932,54 @@
       container.style.display = "block";
     }
 
+    function renderKaalSarpDosha(kaalSarpDosha) {
+      const container = document.getElementById("kaalSarpDoshaContainer");
+      const holder = document.getElementById("kaalSarpDoshaHolder");
+
+      const result = kaalSarpDosha?.data || kaalSarpDosha?.result || kaalSarpDosha || null;
+      const hasDosha = result?.has_dosha ?? result?.has_kaal_sarp_dosha ?? null;
+      const description = result?.description || "";
+      const doshaType = result?.name || result?.type || "";
+
+      if (!kaalSarpDosha || hasDosha === null || hasDosha === undefined) {
+        container.style.display = "none";
+        return;
+      }
+
+      const isPresent = hasDosha === true || hasDosha === "yes" || hasDosha === "Yes";
+
+      holder.innerHTML = `
+        <div style="
+          background: ${isPresent ? "#fdeceb" : "#eaf7ee"};
+          border: 1px solid ${isPresent ? "#e8b3ac" : "#b7dfc4"};
+          border-radius: 10px;
+          padding: 12px;
+          color: #2b2b2b;
+        ">
+          <div style="font-weight:600; font-size:14px; margin-bottom:6px;">
+            ${isPresent ? "⚠️ Kaal Sarp Dosha mojood hai" + (doshaType ? " (" + doshaType + ")" : "") : "✅ Koi Kaal Sarp Dosha nahi hai"}
+          </div>
+          ${description ? `<div style="font-size:13px; color:#444; line-height:1.5;">${description}</div>` : ""}
+        </div>
+      `;
+      container.style.display = "block";
+    }
+
+    // North/South Indian chart style switch karta hai (dono pehle se fetch ho chuke hote hain)
+    function switchChartStyle(style) {
+      currentChartStyle = style;
+      const chartHolder = document.getElementById("chartSvgHolder");
+      const svg = style === "south" ? savedChartSvgSouth : savedChartSvg;
+      if (svg) chartHolder.innerHTML = svg;
+
+      const northBtn = document.getElementById("chartStyleNorthBtn");
+      const southBtn = document.getElementById("chartStyleSouthBtn");
+      const activeStyle = "background: linear-gradient(135deg, #d98324, #b5501a); box-shadow: 0 4px 14px rgba(217,131,36,0.35);";
+      const inactiveStyle = "background: rgba(255,255,255,0.12); box-shadow: none;";
+      northBtn.style.cssText = northBtn.style.cssText.replace(/background:[^;]+;|box-shadow:[^;]+;/g, "") + (style === "north" ? activeStyle : inactiveStyle);
+      southBtn.style.cssText = southBtn.style.cssText.replace(/background:[^;]+;|box-shadow:[^;]+;/g, "") + (style === "south" ? activeStyle : inactiveStyle);
+    }
+
     async function getHoroscope() {
       const btn = document.getElementById("submitBtn");
       const resultDiv = document.getElementById("result");
@@ -912,6 +992,7 @@
         tob: tob,
         lat: document.getElementById("lat").value,
         lon: document.getElementById("lon").value,
+        language: selectedLanguage,
       };
 
       if (!payload.name || !payload.dob || !selectedCity) {
@@ -933,12 +1014,13 @@
 
         if (!res.ok) throw new Error(data.error || "Kuch galat ho gaya");
 
-        // Agar chart mila hai to usko dikhao
+        // Agar chart mila hai to usko dikhao (default North Indian)
         const chartContainer = document.getElementById("chartContainer");
-        const chartHolder = document.getElementById("chartSvgHolder");
-        if (data.chartSvg) {
-          chartHolder.innerHTML = data.chartSvg;
+        if (data.chartSvg || data.chartSvgSouth) {
           chartContainer.style.display = "block";
+          savedChartSvg = data.chartSvg;
+          savedChartSvgSouth = data.chartSvgSouth;
+          switchChartStyle(data.chartSvg ? "north" : "south");
         } else {
           chartContainer.style.display = "none";
         }
@@ -948,6 +1030,9 @@
 
         // Mangal Dosh (Manglik) result dikhao
         renderMangalDosha(data.mangalDosha);
+
+        // Kaal Sarp Dosha result dikhao
+        renderKaalSarpDosha(data.kaalSarpDosha);
 
         resultDiv.style.display = "block";
         resultDiv.textContent = data.careerHoroscope;
@@ -959,10 +1044,10 @@
         document.getElementById("chatMessages").innerHTML = "";
         document.getElementById("chatSection").style.display = "block";
 
-        // PDF aur Daily Horoscope ke liye sab kuch save karo
-        savedChartSvg = data.chartSvg;
+        // PDF aur Daily Horoscope ke liye baaki data save karo
         savedPlanetPositions = data.planetPositions;
         savedMangalDosha = data.mangalDosha;
+        savedKaalSarpDosha = data.kaalSarpDosha;
         savedCareerHoroscope = data.careerHoroscope;
         savedDob = payload.dob;
         savedTob = tob;
@@ -981,12 +1066,30 @@
       }
     }
     // ============ DAILY HOROSCOPE ============
-    async function getDailyHoroscope() {
-      const btn = document.getElementById("dailyHoroscopeBtn");
+    const periodButtonIds = {
+      daily: "periodBtnDaily",
+      weekly: "periodBtnWeekly",
+      monthly: "periodBtnMonthly",
+      yearly: "periodBtnYearly",
+    };
+
+    async function getDailyHoroscope(period) {
+      period = period || "daily";
       const resultEl = document.getElementById("dailyHoroscopeResult");
 
+      // Active button highlight karo
+      const activeStyle = "background: linear-gradient(135deg, #d98324, #b5501a); box-shadow: 0 4px 14px rgba(217,131,36,0.35);";
+      const inactiveStyle = "background: rgba(255,255,255,0.12); box-shadow: none;";
+      Object.entries(periodButtonIds).forEach(([p, id]) => {
+        const b = document.getElementById(id);
+        b.style.cssText = b.style.cssText.replace(/background:[^;]+;|box-shadow:[^;]+;/g, "") + (p === period ? activeStyle : inactiveStyle);
+      });
+
+      const btn = document.getElementById(periodButtonIds[period]);
+      const originalText = btn.textContent;
       btn.disabled = true;
       btn.textContent = "Loading...";
+      resultEl.style.display = "none";
 
       try {
         const res = await fetch("/api/daily-horoscope", {
@@ -996,6 +1099,8 @@
             name: savedName,
             moonRashi: savedMoonRashi,
             nakshatra: savedMoonNakshatra,
+            period,
+            language: selectedLanguage,
           }),
         });
         const data = await res.json();
@@ -1008,7 +1113,7 @@
         resultEl.style.display = "block";
       } finally {
         btn.disabled = false;
-        btn.textContent = "Aaj Ka Horoscope Dekho";
+        btn.textContent = originalText;
       }
     }
 
@@ -1067,13 +1172,14 @@
         doc.text(`Time of Birth: ${savedTob}`, 40, y); y += 16;
         doc.text(`Birth Place: ${savedPlaceName}`, 40, y); y += 20;
 
-        // Chart image (agar mila ho)
-        if (savedChartSvg) {
+        // Chart image (agar mila ho) — jo style abhi screen pe selected hai wahi use karenge
+        const chartToUse = currentChartStyle === "south" ? savedChartSvgSouth : savedChartSvg;
+        if (chartToUse) {
           try {
-            const pngDataUrl = await svgToPngDataUrl(savedChartSvg, 500, 500);
+            const pngDataUrl = await svgToPngDataUrl(chartToUse, 500, 500);
             const imgSize = 220;
             doc.setFontSize(13);
-            doc.text("Kundli Chart (North Indian Style)", 40, y);
+            doc.text(`Kundli Chart (${currentChartStyle === "south" ? "South" : "North"} Indian Style)`, 40, y);
             y += 10;
             doc.addImage(pngDataUrl, "PNG", 40, y, imgSize, imgSize);
             y += imgSize + 20;
@@ -1138,6 +1244,24 @@
 
         if (y > 650) { doc.addPage(); y = 40; }
 
+        // Kaal Sarp Dosha
+        const kResult = savedKaalSarpDosha?.data || savedKaalSarpDosha?.result || savedKaalSarpDosha || null;
+        const hasKaalDosha = kResult?.has_dosha ?? kResult?.has_kaal_sarp_dosha ?? null;
+        if (hasKaalDosha !== null && hasKaalDosha !== undefined) {
+          const isPresent = hasKaalDosha === true || hasKaalDosha === "yes" || hasKaalDosha === "Yes";
+          doc.setFontSize(13);
+          doc.setTextColor(181, 80, 26);
+          doc.text("Kaal Sarp Dosha Check", 40, y);
+          y += 16;
+          doc.setFontSize(11);
+          doc.setTextColor(40, 40, 40);
+          const kaalLine = isPresent ? "Kaal Sarp Dosha: Present" : "Kaal Sarp Dosha: Not Present";
+          doc.text(kaalLine, 40, y);
+          y += 18;
+        }
+
+        if (y > 650) { doc.addPage(); y = 40; }
+
         // Career horoscope text (word-wrapped)
         if (savedCareerHoroscope) {
           doc.setFontSize(13);
@@ -1191,6 +1315,7 @@
             kundliData: savedKundliData,
             question,
             history: chatHistory,
+            language: selectedLanguage,
           }),
         });
         const data = await res.json();
