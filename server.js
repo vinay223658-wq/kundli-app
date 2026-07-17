@@ -273,6 +273,33 @@ Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur mot
 }
 
 // --------------------------------------------------------
+// STEP 6: Panchang — aaj ki tithi, nakshatra, yoga, karana, shubh muhurat
+// --------------------------------------------------------
+async function getPanchang({ date, lat, lon }) {
+  const token = await getProkeralaToken();
+
+  // Panchang ke liye din ka koi bhi time chalta hai, hum dopahar (12:00) use karte hain
+  const datetime = `${date}T12:00:00+05:30`;
+
+  const url = new URL("https://api.prokerala.com/v2/astrology/panchang");
+  url.searchParams.set("ayanamsa", "1");
+  url.searchParams.set("coordinates", `${lat},${lon}`);
+  url.searchParams.set("datetime", datetime);
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Panchang API ne ye error diya:", errorBody);
+    throw new Error("Panchang fetch karne mein error: " + response.status + " - " + errorBody);
+  }
+
+  return response.json();
+}
+
+// --------------------------------------------------------
 // STEP 5: Kundli Matching (Guna Milan) — do logon ki kundli match karna,
 // shaadi ke liye compatibility check
 // --------------------------------------------------------
@@ -678,6 +705,24 @@ app.post("/api/horoscope", async (req, res) => {
       planetPositions,
       careerHoroscope,
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --------------------------------------------------------
+// PANCHANG ENDPOINT: Kisi bhi date/place ka Panchang (tithi, nakshatra waghera)
+// --------------------------------------------------------
+app.get("/api/panchang", async (req, res) => {
+  try {
+    const { date, lat, lon } = req.query;
+    if (!date || !lat || !lon) {
+      return res.status(400).json({ error: "date, lat, lon zaroori hain" });
+    }
+
+    const panchangData = await getPanchang({ date, lat, lon });
+    res.json({ success: true, panchang: panchangData });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <title>Kundli Career Horoscope</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -85,6 +86,14 @@
   }
   .time-row { display: flex; gap: 8px; margin-top: 5px; }
   .time-row select { margin-top: 0; }
+
+  @media (max-width: 400px) {
+    body { padding: 16px 10px 50px; }
+    h1 { font-size: 19px; }
+    .time-row { gap: 5px; }
+    .time-row select { font-size: 12px; padding: 9px 3px; }
+    .card { padding: 14px; }
+  }
 </style>
 </head>
 <body>
@@ -306,6 +315,15 @@
     <div id="walletError" style="color:#ff9d9d; font-size:13px; margin-top:8px;"></div>
     </div>
 
+    <!-- ============ TAB NAVIGATION ============ -->
+    <div style="display:flex; gap:6px; margin-bottom:16px;">
+      <button id="tabBtnHoroscope" onclick="switchTab('horoscope')" style="flex:1; margin-top:0; padding:10px 6px; font-size:12px;">🔮 Horoscope</button>
+      <button id="tabBtnMatching" onclick="switchTab('matching')" style="flex:1; margin-top:0; padding:10px 6px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">💑 Matching</button>
+      <button id="tabBtnPanchang" onclick="switchTab('panchang')" style="flex:1; margin-top:0; padding:10px 6px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">📅 Panchang</button>
+    </div>
+
+    <!-- ============ TAB 1: HOROSCOPE ============ -->
+    <div id="tabHoroscope" class="tab-content">
     <div class="card">
   <label>Full Name</label>
   <input id="name" placeholder="e.g. Rahul Sharma" />
@@ -357,7 +375,27 @@
 
   <div id="result"></div>
 
+  <!-- Chat Section - horoscope milne ke baad hi dikhega -->
+  <div id="chatSection" class="card" style="display:none; margin-top: 24px;">
+    <h3 style="font-size: 15px; color: #ffd77a;">💬 Ask a Question <span style="font-size:12px; color:#d8c3a0; font-weight:normal;">(₹5 per question)</span></h3>
+    <div id="chatMessages" style="
+      background: white;
+      border: 1px solid #eadfca;
+      border-radius: 10px;
+      padding: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    "></div>
+    <div style="display: flex; gap: 8px;">
+      <input id="chatInput" placeholder="e.g. Will I get married this year?" style="flex:1;" />
+      <button id="chatSendBtn" style="width:auto; margin-top:0; padding: 10px 16px;" onclick="sendChatMessage()">Send</button>
+    </div>
+  </div>
+    </div> <!-- tabHoroscope band -->
 
+    <!-- ============ TAB 2: KUNDLI MATCHING ============ -->
+    <div id="tabMatching" class="tab-content" style="display:none;">
 
   <!-- ============ KUNDLI MATCHING SECTION ============ -->
   <div class="card" style="margin-top: 24px;">
@@ -416,26 +454,48 @@
     <button id="matchBtn" onclick="checkMatch()">Check Compatibility</button>
     <div id="matchResult" style="display:none; margin-top:16px; padding:16px; background:rgba(255,255,255,0.97); border-radius:10px; color:#2b2b2b; line-height:1.7; white-space:pre-wrap;"></div>
   </div>
+    </div> <!-- tabMatching band -->
 
-  <!-- Chat Section - horoscope milne ke baad hi dikhega -->
-  <div id="chatSection" class="card" style="display:none; margin-top: 24px;">
-    <h3 style="font-size: 15px; color: #ffd77a;">💬 Ask a Question <span style="font-size:12px; color:#d8c3a0; font-weight:normal;">(₹5 per question)</span></h3>
-    <div id="chatMessages" style="
-      background: white;
-      border: 1px solid #eadfca;
-      border-radius: 10px;
-      padding: 12px;
-      max-height: 300px;
-      overflow-y: auto;
-      margin-bottom: 10px;
-    "></div>
-    <div style="display: flex; gap: 8px;">
-      <input id="chatInput" placeholder="e.g. Will I get married this year?" style="flex:1;" />
-      <button id="chatSendBtn" style="width:auto; margin-top:0; padding: 10px 16px;" onclick="sendChatMessage()">Send</button>
+    <!-- ============ TAB 3: PANCHANG ============ -->
+    <div id="tabPanchang" class="tab-content" style="display:none;">
+    <div class="card">
+      <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">📅 Daily Panchang</h3>
+
+      <label>Date</label>
+      <input id="panchangDate" type="date" />
+
+      <label>Location</label>
+      <input id="panchangPlace" placeholder="e.g. Delhi, Haldwani..." autocomplete="off" />
+      <div id="panchangSuggestions" style="position:relative; background:white; border:1px solid #d8c3a5; border-radius:8px; margin-top:2px; max-height:150px; overflow-y:auto; display:none;"></div>
+      <div class="hint" id="panchangPlaceHint"></div>
+      <input type="hidden" id="panchangLat" />
+      <input type="hidden" id="panchangLon" />
+
+      <button id="panchangBtn" onclick="getPanchang()">Get Panchang</button>
+      <div id="panchangResult" style="display:none; margin-top:16px;"></div>
     </div>
-  </div>
+    </div> <!-- tabPanchang band -->
+
+  </div> <!-- mainApp band -->
+
 
   <script>
+    // ============ TAB SWITCHING ============
+    const tabButtonStyle = {
+      active: "background: linear-gradient(135deg, #d98324, #b5501a); box-shadow: 0 4px 14px rgba(217,131,36,0.35);",
+      inactive: "background: rgba(255,255,255,0.12); box-shadow: none;",
+    };
+    function switchTab(tabName) {
+      const tabs = ["horoscope", "matching", "panchang"];
+      tabs.forEach((t) => {
+        document.getElementById("tab" + t.charAt(0).toUpperCase() + t.slice(1)).style.display =
+          t === tabName ? "block" : "none";
+        const btn = document.getElementById("tabBtn" + t.charAt(0).toUpperCase() + t.slice(1));
+        btn.style.cssText = btn.style.cssText.replace(/background:[^;]+;|box-shadow:[^;]+;/g, "") +
+          (t === tabName ? tabButtonStyle.active : tabButtonStyle.inactive);
+      });
+    }
+
     // Kisi bhi Hour/Minute dropdown pair ko 12-hour format se bharta hai
     function buildTimeDropdowns(hourId, minuteId) {
       const hourSelect = document.getElementById(hourId);
@@ -635,6 +695,82 @@
       }
     }
 
+    // ============ PANCHANG ============
+    let panchangSelectedPlace = null;
+
+    attachPlaceSearch({
+      inputId: "panchangPlace",
+      suggestionsId: "panchangSuggestions",
+      hintId: "panchangPlaceHint",
+      latId: "panchangLat",
+      lonId: "panchangLon",
+      onSelect: (place) => {
+        panchangSelectedPlace = place;
+      },
+    });
+
+    // Default date aaj ki rakhte hain
+    document.getElementById("panchangDate").valueAsDate = new Date();
+
+    // Panchang data ko readable form mein dikhata hai
+    function renderPanchang(panchangData) {
+      const resultDiv = document.getElementById("panchangResult");
+      const d = panchangData?.panchang?.data || panchangData?.data || {};
+
+      const getFirst = (field) => {
+        const val = d[field];
+        if (Array.isArray(val) && val.length > 0) return val[0].name || val[0];
+        if (val && typeof val === "object") return val.name || JSON.stringify(val);
+        return val || "N/A";
+      };
+
+      resultDiv.innerHTML = `
+        <div style="background:rgba(255,255,255,0.97); border-radius:10px; padding:16px; color:#2b2b2b;">
+          <table style="width:100%; font-size:14px; line-height:1.9;">
+            <tr><td style="font-weight:600; padding-right:12px;">Vaar (Day)</td><td>${d.vaara || "N/A"}</td></tr>
+            <tr><td style="font-weight:600;">Tithi</td><td>${getFirst("tithi")}</td></tr>
+            <tr><td style="font-weight:600;">Nakshatra</td><td>${getFirst("nakshatra")}</td></tr>
+            <tr><td style="font-weight:600;">Yoga</td><td>${getFirst("yoga")}</td></tr>
+            <tr><td style="font-weight:600;">Karana</td><td>${getFirst("karana")}</td></tr>
+            <tr><td style="font-weight:600;">Sunrise</td><td>${d.sunrise || "N/A"}</td></tr>
+            <tr><td style="font-weight:600;">Sunset</td><td>${d.sunset || "N/A"}</td></tr>
+          </table>
+        </div>
+      `;
+      resultDiv.style.display = "block";
+    }
+
+    async function getPanchang() {
+      const btn = document.getElementById("panchangBtn");
+      const resultDiv = document.getElementById("panchangResult");
+      const date = document.getElementById("panchangDate").value;
+
+      if (!date || !panchangSelectedPlace) {
+        alert("Please select a date and location (from the suggestions list)!");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Loading...";
+      resultDiv.style.display = "none";
+
+      try {
+        const lat = document.getElementById("panchangLat").value;
+        const lon = document.getElementById("panchangLon").value;
+        const res = await fetch(`/api/panchang?date=${date}&lat=${lat}&lon=${lon}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Something went wrong");
+
+        renderPanchang(data);
+      } catch (err) {
+        resultDiv.style.display = "block";
+        resultDiv.innerHTML = `<div style="color:#ff9d9d;">Error: ${err.message}</div>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Get Panchang";
+      }
+    }
+
     // Planet position data ko readable table mein dikhata hai (pandit logon ke liye)
     function renderPlanetTable(planetPositions) {
       const container = document.getElementById("planetContainer");
@@ -811,6 +947,5 @@
       if (e.key === "Enter") sendChatMessage();
     });
   </script>
-  </div> <!-- mainApp band -->
 </body>
 </html>
