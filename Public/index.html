@@ -350,8 +350,72 @@
     <div id="chartSvgHolder" style="background:white; padding:12px; border-radius:10px; border:1px solid #eadfca;"></div>
   </div>
 
+  <div id="planetContainer" class="card" style="display:none; margin-top: 20px;">
+    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">🪐 Graha Positions (Planetary Details)</h3>
+    <div id="planetTableHolder" style="overflow-x:auto;"></div>
+  </div>
+
   <div id="result"></div>
 
+
+
+  <!-- ============ KUNDLI MATCHING SECTION ============ -->
+  <div class="card" style="margin-top: 24px;">
+    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">💑 Kundli Matching (Marriage Compatibility)</h3>
+
+    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+      <!-- Groom's details -->
+      <div style="flex:1; min-width:220px;">
+        <h4 style="font-size:13px; color:#f0d9b5; margin-bottom:4px;">Groom's Details</h4>
+        <label>Name</label>
+        <input id="boyName" placeholder="Groom's name" />
+        <label>Date of Birth</label>
+        <input id="boyDob" type="date" min="1920-01-01" max="2026-12-31" />
+        <label>Time of Birth</label>
+        <div class="time-row">
+          <select id="boyTobHour"></select>
+          <select id="boyTobMinute"></select>
+          <select id="boyTobAmPm">
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </select>
+        </div>
+        <label>Birth Place</label>
+        <input id="boyPlace" placeholder="e.g. Delhi" autocomplete="off" />
+        <div id="boySuggestions" style="position:relative; background:white; border:1px solid #d8c3a5; border-radius:8px; margin-top:2px; max-height:150px; overflow-y:auto; display:none;"></div>
+        <div class="hint" id="boyPlaceHint"></div>
+        <input type="hidden" id="boyLat" />
+        <input type="hidden" id="boyLon" />
+      </div>
+
+      <!-- Bride's details -->
+      <div style="flex:1; min-width:220px;">
+        <h4 style="font-size:13px; color:#f0d9b5; margin-bottom:4px;">Bride's Details</h4>
+        <label>Name</label>
+        <input id="girlName" placeholder="Bride's name" />
+        <label>Date of Birth</label>
+        <input id="girlDob" type="date" min="1920-01-01" max="2026-12-31" />
+        <label>Time of Birth</label>
+        <div class="time-row">
+          <select id="girlTobHour"></select>
+          <select id="girlTobMinute"></select>
+          <select id="girlTobAmPm">
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </select>
+        </div>
+        <label>Birth Place</label>
+        <input id="girlPlace" placeholder="e.g. Mumbai" autocomplete="off" />
+        <div id="girlSuggestions" style="position:relative; background:white; border:1px solid #d8c3a5; border-radius:8px; margin-top:2px; max-height:150px; overflow-y:auto; display:none;"></div>
+        <div class="hint" id="girlPlaceHint"></div>
+        <input type="hidden" id="girlLat" />
+        <input type="hidden" id="girlLon" />
+      </div>
+    </div>
+
+    <button id="matchBtn" onclick="checkMatch()">Check Compatibility</button>
+    <div id="matchResult" style="display:none; margin-top:16px; padding:16px; background:rgba(255,255,255,0.97); border-radius:10px; color:#2b2b2b; line-height:1.7; white-space:pre-wrap;"></div>
+  </div>
 
   <!-- Chat Section - horoscope milne ke baad hi dikhega -->
   <div id="chatSection" class="card" style="display:none; margin-top: 24px;">
@@ -372,20 +436,33 @@
   </div>
 
   <script>
-    // Time of Birth ke liye Hour/Minute dropdowns bharte hain (12-hour format, AM/PM ke saath)
-    const hourSelect = document.getElementById("tobHour");
-    const minuteSelect = document.getElementById("tobMinute");
-    for (let h = 1; h <= 12; h++) {
-      const opt = document.createElement("option");
-      opt.value = h;
-      opt.textContent = h;
-      hourSelect.appendChild(opt);
+    // Kisi bhi Hour/Minute dropdown pair ko 12-hour format se bharta hai
+    function buildTimeDropdowns(hourId, minuteId) {
+      const hourSelect = document.getElementById(hourId);
+      const minuteSelect = document.getElementById(minuteId);
+      for (let h = 1; h <= 12; h++) {
+        const opt = document.createElement("option");
+        opt.value = h;
+        opt.textContent = h;
+        hourSelect.appendChild(opt);
+      }
+      for (let m = 0; m < 60; m++) {
+        const opt = document.createElement("option");
+        opt.value = m;
+        opt.textContent = m.toString().padStart(2, "0");
+        minuteSelect.appendChild(opt);
+      }
     }
-    for (let m = 0; m < 60; m++) {
-      const opt = document.createElement("option");
-      opt.value = m;
-      opt.textContent = m.toString().padStart(2, "0");
-      minuteSelect.appendChild(opt);
+    buildTimeDropdowns("tobHour", "tobMinute");
+
+    // 12-hour (hour/minute/AM-PM) selection ko 24-hour "HH:mm" string mein convert karta hai
+    function to24HourString(hourId, minuteId, ampmId) {
+      let hour12 = parseInt(document.getElementById(hourId).value || "0", 10);
+      const minute = parseInt(document.getElementById(minuteId).value || "0", 10);
+      const ampm = document.getElementById(ampmId).value;
+      let hour24 = hour12 % 12;
+      if (ampm === "PM") hour24 += 12;
+      return hour24.toString().padStart(2, "0") + ":" + minute.toString().padStart(2, "0");
     }
 
     let selectedCity = null;
@@ -393,89 +470,231 @@
     let savedName = "";
     let chatHistory = []; // conversation history taaki bot pichli baat yaad rakhe
 
-    const placeInput = document.getElementById("place");
-    const suggestionsBox = document.getElementById("suggestions");
-    const hint = document.getElementById("selectedPlaceHint");
-    let searchDebounceTimer = null;
-    let currentMatches = [];
+    // Ye function kisi bhi place-search input pe attach ho sakta hai
+    // (main form ke liye, aur baad mein Kundli Matching ke boy/girl fields ke liye bhi)
+    function attachPlaceSearch({ inputId, suggestionsId, hintId, latId, lonId, onSelect }) {
+      const inputEl = document.getElementById(inputId);
+      const suggestionsEl = document.getElementById(suggestionsId);
+      const hintEl = document.getElementById(hintId);
+      let debounceTimer = null;
+      let matches = [];
 
-    placeInput.addEventListener("input", () => {
-      const query = placeInput.value.trim();
-      selectedCity = null;
-      document.getElementById("lat").value = "";
-      document.getElementById("lon").value = "";
-      hint.textContent = "";
+      inputEl.addEventListener("input", () => {
+        const query = inputEl.value.trim();
+        document.getElementById(latId).value = "";
+        document.getElementById(lonId).value = "";
+        hintEl.textContent = "";
+        if (onSelect) onSelect(null);
 
-      // Pichla pending search cancel karo (debounce — bahut zyada requests na jayein)
-      clearTimeout(searchDebounceTimer);
+        clearTimeout(debounceTimer);
 
-      if (query.length < 3) {
-        suggestionsBox.style.display = "none";
+        if (query.length < 3) {
+          suggestionsEl.style.display = "none";
+          return;
+        }
+
+        suggestionsEl.innerHTML = `<div style="padding:8px 12px; color:#999;">Searching...</div>`;
+        suggestionsEl.style.display = "block";
+
+        debounceTimer = setTimeout(async () => {
+          try {
+            const res = await fetch("/api/places?q=" + encodeURIComponent(query));
+            const data = await res.json();
+            matches = data.results || [];
+
+            if (matches.length === 0) {
+              suggestionsEl.innerHTML = `<div style="padding:8px 12px; color:#999;">No places found</div>`;
+              return;
+            }
+
+            suggestionsEl.innerHTML = matches
+              .map(
+                (c, i) =>
+                  `<div data-index="${i}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0e6d2; font-size:13px;">
+                    ${c.name}
+                  </div>`
+              )
+              .join("");
+
+            suggestionsEl.querySelectorAll("div[data-index]").forEach((el, i) => {
+              el.addEventListener("click", () => {
+                const place = matches[i];
+                inputEl.value = place.name;
+                document.getElementById(latId).value = place.lat;
+                document.getElementById(lonId).value = place.lon;
+                hintEl.textContent = `✓ Coordinates set: ${place.lat.toFixed(4)}, ${place.lon.toFixed(4)}`;
+                suggestionsEl.style.display = "none";
+                if (onSelect) onSelect(place);
+              });
+              el.addEventListener("mouseenter", () => (el.style.background = "#fdf6ec"));
+              el.addEventListener("mouseleave", () => (el.style.background = "white"));
+            });
+          } catch (err) {
+            suggestionsEl.innerHTML = `<div style="padding:8px 12px; color:red;">Search error</div>`;
+          }
+        }, 400);
+      });
+
+      document.addEventListener("click", (e) => {
+        if (e.target !== inputEl) {
+          suggestionsEl.style.display = "none";
+        }
+      });
+    }
+
+    // Main horoscope form ke liye place search attach karte hain
+    attachPlaceSearch({
+      inputId: "place",
+      suggestionsId: "suggestions",
+      hintId: "selectedPlaceHint",
+      latId: "lat",
+      lonId: "lon",
+      onSelect: (place) => {
+        selectedCity = place;
+      },
+    });
+
+    // Kundli Matching form ke liye bhi place search aur time dropdowns attach karte hain
+    buildTimeDropdowns("boyTobHour", "boyTobMinute");
+    buildTimeDropdowns("girlTobHour", "girlTobMinute");
+
+    let boySelectedPlace = null;
+    let girlSelectedPlace = null;
+
+    attachPlaceSearch({
+      inputId: "boyPlace",
+      suggestionsId: "boySuggestions",
+      hintId: "boyPlaceHint",
+      latId: "boyLat",
+      lonId: "boyLon",
+      onSelect: (place) => {
+        boySelectedPlace = place;
+      },
+    });
+
+    attachPlaceSearch({
+      inputId: "girlPlace",
+      suggestionsId: "girlSuggestions",
+      hintId: "girlPlaceHint",
+      latId: "girlLat",
+      lonId: "girlLon",
+      onSelect: (place) => {
+        girlSelectedPlace = place;
+      },
+    });
+
+    async function checkMatch() {
+      const btn = document.getElementById("matchBtn");
+      const resultDiv = document.getElementById("matchResult");
+
+      const boy = {
+        name: document.getElementById("boyName").value,
+        dob: document.getElementById("boyDob").value,
+        tob: to24HourString("boyTobHour", "boyTobMinute", "boyTobAmPm"),
+        lat: document.getElementById("boyLat").value,
+        lon: document.getElementById("boyLon").value,
+      };
+      const girl = {
+        name: document.getElementById("girlName").value,
+        dob: document.getElementById("girlDob").value,
+        tob: to24HourString("girlTobHour", "girlTobMinute", "girlTobAmPm"),
+        lat: document.getElementById("girlLat").value,
+        lon: document.getElementById("girlLon").value,
+      };
+
+      if (!boy.name || !boy.dob || !boySelectedPlace) {
+        alert("Please fill Groom's details and select birth place from the list!");
+        return;
+      }
+      if (!girl.name || !girl.dob || !girlSelectedPlace) {
+        alert("Please fill Bride's details and select birth place from the list!");
         return;
       }
 
-      suggestionsBox.innerHTML = `<div style="padding:8px 12px; color:#999;">Dhoond rahe hain...</div>`;
-      suggestionsBox.style.display = "block";
+      btn.disabled = true;
+      btn.textContent = "Checking Compatibility...";
+      resultDiv.style.display = "none";
 
-      // 400ms wait karte hain taaki user type karna band kare, phir search karein
-      searchDebounceTimer = setTimeout(async () => {
-        try {
-          const res = await fetch("/api/places?q=" + encodeURIComponent(query));
-          const data = await res.json();
-          currentMatches = data.results || [];
+      try {
+        const res = await fetch("/api/match", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ boy, girl }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Something went wrong");
 
-          if (currentMatches.length === 0) {
-            suggestionsBox.innerHTML = `<div style="padding:8px 12px; color:#999;">Koi jagah nahi mili</div>`;
-            return;
-          }
-
-          suggestionsBox.innerHTML = currentMatches
-            .map(
-              (c, i) =>
-                `<div data-index="${i}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0e6d2; font-size:13px;">
-                  ${c.name}
-                </div>`
-            )
-            .join("");
-
-          // Har suggestion pe click listener lagate hain
-          suggestionsBox.querySelectorAll("div[data-index]").forEach((el, i) => {
-            el.addEventListener("click", () => {
-              const place = currentMatches[i];
-              selectedCity = place;
-              placeInput.value = place.name;
-              document.getElementById("lat").value = place.lat;
-              document.getElementById("lon").value = place.lon;
-              hint.textContent = `✓ Coordinates set: ${place.lat.toFixed(4)}, ${place.lon.toFixed(4)}`;
-              suggestionsBox.style.display = "none";
-            });
-            el.addEventListener("mouseenter", () => (el.style.background = "#fdf6ec"));
-            el.addEventListener("mouseleave", () => (el.style.background = "white"));
-          });
-        } catch (err) {
-          suggestionsBox.innerHTML = `<div style="padding:8px 12px; color:red;">Search mein error aayi</div>`;
-        }
-      }, 400);
-    });
-
-    // Bahar click karne pe suggestions band ho jayen
-    document.addEventListener("click", (e) => {
-      if (e.target !== placeInput) {
-        suggestionsBox.style.display = "none";
+        resultDiv.style.display = "block";
+        resultDiv.textContent = data.summary;
+      } catch (err) {
+        resultDiv.style.display = "block";
+        resultDiv.textContent = "Error: " + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Check Compatibility";
       }
-    });
+    }
+
+    // Planet position data ko readable table mein dikhata hai (pandit logon ke liye)
+    function renderPlanetTable(planetPositions) {
+      const container = document.getElementById("planetContainer");
+      const holder = document.getElementById("planetTableHolder");
+
+      // Data ki jagah dhundte hain — Prokerala ka structure kabhi kabhi thoda alag ho sakta hai,
+      // isliye kai jagah try karte hain
+      const planets =
+        planetPositions?.data?.planet_position ||
+        planetPositions?.planet_position ||
+        planetPositions?.data ||
+        null;
+
+      if (!planets || !Array.isArray(planets) || planets.length === 0) {
+        container.style.display = "none";
+        return;
+      }
+
+      let rows = planets
+        .map((p) => {
+          const name = p.name || p.planet || "-";
+          const rasi = p.rasi?.name || p.rashi?.name || "-";
+          const nakshatra = p.nakshatra?.name || "-";
+          const pada = p.nakshatra?.pada ?? "-";
+          const degree = p.degree !== undefined ? Number(p.degree).toFixed(2) + "°" : "-";
+          const retro = p.is_retrograde ? "Yes (R)" : "No";
+          return `<tr>
+            <td style="padding:6px 10px; border-bottom:1px solid #eee;">${name}</td>
+            <td style="padding:6px 10px; border-bottom:1px solid #eee;">${rasi}</td>
+            <td style="padding:6px 10px; border-bottom:1px solid #eee;">${nakshatra}</td>
+            <td style="padding:6px 10px; border-bottom:1px solid #eee;">${pada}</td>
+            <td style="padding:6px 10px; border-bottom:1px solid #eee;">${degree}</td>
+            <td style="padding:6px 10px; border-bottom:1px solid #eee;">${retro}</td>
+          </tr>`;
+        })
+        .join("");
+
+      holder.innerHTML = `
+        <table style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; font-size:13px; color:#2b2b2b;">
+          <thead>
+            <tr style="background:#f0e0c8;">
+              <th style="padding:8px 10px; text-align:left;">Graha</th>
+              <th style="padding:8px 10px; text-align:left;">Rashi</th>
+              <th style="padding:8px 10px; text-align:left;">Nakshatra</th>
+              <th style="padding:8px 10px; text-align:left;">Pada</th>
+              <th style="padding:8px 10px; text-align:left;">Degree</th>
+              <th style="padding:8px 10px; text-align:left;">Retrograde</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+      container.style.display = "block";
+    }
 
     async function getHoroscope() {
       const btn = document.getElementById("submitBtn");
       const resultDiv = document.getElementById("result");
 
-      // 12-hour (AM/PM) selection ko 24-hour "HH:mm" format mein convert karte hain
-      let hour12 = parseInt(document.getElementById("tobHour").value || "0", 10);
-      const minute = parseInt(document.getElementById("tobMinute").value || "0", 10);
-      const ampm = document.getElementById("tobAmPm").value;
-      let hour24 = hour12 % 12;
-      if (ampm === "PM") hour24 += 12;
-      const tob = hour24.toString().padStart(2, "0") + ":" + minute.toString().padStart(2, "0");
+      const tob = to24HourString("tobHour", "tobMinute", "tobAmPm");
 
       const payload = {
         name: document.getElementById("name").value,
@@ -513,6 +732,9 @@
         } else {
           chartContainer.style.display = "none";
         }
+
+        // Planet positions (Graha) table dikhao
+        renderPlanetTable(data.planetPositions);
 
         resultDiv.style.display = "block";
         resultDiv.textContent = data.careerHoroscope;

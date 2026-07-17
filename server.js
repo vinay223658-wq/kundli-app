@@ -199,8 +199,37 @@ async function getKundliChartSvg({ dob, tob, lat, lon, tz }) {
   return response.text();
 }
 
-//         text mein convert karwana
 // --------------------------------------------------------
+// STEP 2C: Sab grahon (planets) ki exact position fetch karna
+// (Nakshatra, Rashi, degree — pandit logon ke liye zaroori)
+// --------------------------------------------------------
+async function getPlanetPositions({ dob, tob, lat, lon, tz }) {
+  const token = await getProkeralaToken();
+
+  const timeWithSeconds = tob.length === 5 ? `${tob}:00` : tob;
+  const datetime = `${dob}T${timeWithSeconds}${tz || "+05:30"}`;
+
+  const url = new URL("https://api.prokerala.com/v2/astrology/planet-position");
+  url.searchParams.set("ayanamsa", "1");
+  url.searchParams.set("coordinates", `${lat},${lon}`);
+  url.searchParams.set("datetime", datetime);
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Planet position API ne ye error diya:", errorBody);
+    throw new Error(
+      "Planet position fetch karne mein error: " + response.status + " - " + errorBody
+    );
+  }
+
+  return response.json();
+}
+
+
 async function getCareerHoroscopeFromClaude({ name, kundliData }) {
   const prompt = `Tum ek anubhavi (experienced) Vedic astrologer ho jo Hinglish (Hindi + English mix) mein
 baat karte ho, jaisa Astrotalk app pe astrologers karte hain.
@@ -242,6 +271,84 @@ Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur mot
   const textBlock = data.content.find((c) => c.type === "text");
   return textBlock ? textBlock.text : "";
 }
+
+// --------------------------------------------------------
+// STEP 5: Kundli Matching (Guna Milan) — do logon ki kundli match karna,
+// shaadi ke liye compatibility check
+// --------------------------------------------------------
+async function getKundliMatch({ boy, girl }) {
+  const token = await getProkeralaToken();
+
+  const boyTimeWithSeconds = boy.tob.length === 5 ? `${boy.tob}:00` : boy.tob;
+  const boyDatetime = `${boy.dob}T${boyTimeWithSeconds}+05:30`;
+
+  const girlTimeWithSeconds = girl.tob.length === 5 ? `${girl.tob}:00` : girl.tob;
+  const girlDatetime = `${girl.dob}T${girlTimeWithSeconds}+05:30`;
+
+  const url = new URL("https://api.prokerala.com/v2/astrology/kundli-matching");
+  url.searchParams.set("ayanamsa", "1");
+  url.searchParams.set("boy_dob", boyDatetime);
+  url.searchParams.set("boy_coordinates", `${boy.lat},${boy.lon}`);
+  url.searchParams.set("girl_dob", girlDatetime);
+  url.searchParams.set("girl_coordinates", `${girl.lat},${girl.lon}`);
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Kundli match API ne ye error diya:", errorBody);
+    throw new Error(
+      "Kundli match karne mein error: " + response.status + " - " + errorBody
+    );
+  }
+
+  return response.json();
+}
+
+async function getMatchSummaryFromClaude({ boyName, girlName, matchData }) {
+  const prompt = `Tum ek anubhavi (experienced) Vedic astrologer ho jo Hinglish (Hindi + English mix) mein
+baat karte ho, jaisa Astrotalk app pe astrologers karte hain. Ye "Kundli Matching" (Guna Milan) ka
+raw astrological data hai do logon ke beech shaadi compatibility check karne ke liye.
+
+Ladka: ${boyName}
+Ladki: ${girlName}
+Matching Data (JSON): ${JSON.stringify(matchData)}
+
+Is data ke aadhar par ek friendly, easy-to-samajhne wala paragraph likho jisme ho:
+1. Overall compatibility score/summary (jo bhi data mein guna/points mile hain unko simple bhasha mein samjhao)
+2. Strengths — dono ki kundli mein kya achha match ho raha hai
+3. Agar koi dosh/concern hai to usko gently mention karo (scare mat karo, balanced tone rakho)
+4. Ek chhota practical suggestion (jaise pandit se consult karne ka)
+
+Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur balanced rakho — na bahut positive na bahut negative, jo data mein hai wahi bolo.`;
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-5",
+      max_tokens: 600,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Claude match summary error:", errorBody);
+    throw new Error("Claude API error: " + response.status + " - " + errorBody);
+  }
+
+  const data = await response.json();
+  const textBlock = data.content.find((c) => c.type === "text");
+  return textBlock ? textBlock.text : "";
+}
+
 
 // --------------------------------------------------------
 // STEP 4: Chatbot — user apne sawal pooch sake apni kundli ke baare mein
@@ -549,6 +656,14 @@ app.post("/api/horoscope", async (req, res) => {
       console.error("Chart fetch fail hua, lekin aage badh rahe hain:", chartErr.message);
     }
 
+    // 2B. Grahon (planets) ki exact position bhi lao — pandit logon ke liye
+    let planetPositions = null;
+    try {
+      planetPositions = await getPlanetPositions({ dob, tob, lat, lon });
+    } catch (planetErr) {
+      console.error("Planet position fetch fail hua, lekin aage badh rahe hain:", planetErr.message);
+    }
+
     // 3. Us data ko Claude se samjhwao (career horoscope banwao)
     const careerHoroscope = await getCareerHoroscopeFromClaude({
       name,
@@ -560,8 +675,38 @@ app.post("/api/horoscope", async (req, res) => {
       success: true,
       kundliRaw: kundliData,
       chartSvg,
+      planetPositions,
       careerHoroscope,
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --------------------------------------------------------
+// KUNDLI MATCHING ENDPOINT: Do logon ki details lekar compatibility check karta hai
+// --------------------------------------------------------
+app.post("/api/match", async (req, res) => {
+  try {
+    const { boy, girl } = req.body;
+
+    if (!boy?.name || !boy?.dob || !boy?.tob || !boy?.lat || !boy?.lon) {
+      return res.status(400).json({ error: "Ladke ki poori details (naam, DOB, TOB, place) zaroori hain" });
+    }
+    if (!girl?.name || !girl?.dob || !girl?.tob || !girl?.lat || !girl?.lon) {
+      return res.status(400).json({ error: "Ladki ki poori details (naam, DOB, TOB, place) zaroori hain" });
+    }
+
+    const matchData = await getKundliMatch({ boy, girl });
+
+    const summary = await getMatchSummaryFromClaude({
+      boyName: boy.name,
+      girlName: girl.name,
+      matchData,
+    });
+
+    res.json({ success: true, matchData, summary });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
