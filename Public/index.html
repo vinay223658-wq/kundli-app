@@ -393,14 +393,11 @@
     <div id="planetTableHolder" style="overflow-x:auto;"></div>
   </div>
 
-  <div id="mangalDoshaContainer" class="card" style="display:none; margin-top: 20px;">
-    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">♂️ Mangal Dosh (Manglik) Check</h3>
-    <div id="mangalDoshaHolder"></div>
-  </div>
-
-  <div id="kaalSarpDoshaContainer" class="card" style="display:none; margin-top: 20px;">
-    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">🐍 Kaal Sarp Dosha Check</h3>
-    <div id="kaalSarpDoshaHolder"></div>
+  <div id="doshaContainer" class="card" style="display:none; margin-top: 20px;">
+    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">🕉️ Dosha Check (Mangal + Kaal Sarp)</h3>
+    <button id="doshaCheckBtn" onclick="checkDoshas()" style="margin-top:0;">Check Doshas</button>
+    <div id="mangalDoshaHolder" style="margin-top:10px;"></div>
+    <div id="kaalSarpDoshaHolder" style="margin-top:10px;"></div>
   </div>
 
   <div id="result"></div>
@@ -585,7 +582,8 @@
     let savedPlanetPositions = null;
     let savedMangalDosha = null;
     let savedKaalSarpDosha = null;
-    let savedDashaData = null;
+    let savedDashaPeriods = null;
+    let savedTransitPositions = null;
     let savedCareerHoroscope = "";
     let savedDob = "";
     let savedTob = "";
@@ -900,7 +898,6 @@
     }
 
     function renderMangalDosha(mangalDosha) {
-      const container = document.getElementById("mangalDoshaContainer");
       const holder = document.getElementById("mangalDoshaHolder");
 
       // Prokerala response ka structure thoda alag ho sakta hai, isliye kai jagah try karte hain
@@ -910,7 +907,7 @@
       const description = result?.description || result?.mangal_dosha_present || "";
 
       if (!mangalDosha || hasDosha === null || hasDosha === undefined) {
-        container.style.display = "none";
+        holder.innerHTML = `<div style="color:#ffb; font-size:13px;">Mangal Dosh check nahi ho paya.</div>`;
         return;
       }
 
@@ -930,11 +927,9 @@
           ${description ? `<div style="font-size:13px; color:#444; line-height:1.5;">${description}</div>` : ""}
         </div>
       `;
-      container.style.display = "block";
     }
 
     function renderKaalSarpDosha(kaalSarpDosha) {
-      const container = document.getElementById("kaalSarpDoshaContainer");
       const holder = document.getElementById("kaalSarpDoshaHolder");
 
       const result = kaalSarpDosha?.data || kaalSarpDosha?.result || kaalSarpDosha || null;
@@ -943,7 +938,7 @@
       const doshaType = result?.name || result?.type || "";
 
       if (!kaalSarpDosha || hasDosha === null || hasDosha === undefined) {
-        container.style.display = "none";
+        holder.innerHTML = `<div style="color:#ffb; font-size:13px;">Kaal Sarp Dosha check nahi ho paya.</div>`;
         return;
       }
 
@@ -963,15 +958,66 @@
           ${description ? `<div style="font-size:13px; color:#444; line-height:1.5;">${description}</div>` : ""}
         </div>
       `;
-      container.style.display = "block";
     }
 
-    // North/South Indian chart style switch karta hai (dono pehle se fetch ho chuke hote hain)
-    function switchChartStyle(style) {
+    // Doshas ko on-demand check karta hai — sirf ek baar (button dabane par),
+    // taaki har kundli generate hone par automatic Prokerala calls na ho
+    async function checkDoshas() {
+      const btn = document.getElementById("doshaCheckBtn");
+      btn.disabled = true;
+      btn.textContent = "Checking...";
+
+      try {
+        const res = await fetch("/api/doshas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dob: savedDob, tob: savedTob, lat: document.getElementById("lat").value, lon: document.getElementById("lon").value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Kuch galat ho gaya");
+
+        savedMangalDosha = data.mangalDosha;
+        savedKaalSarpDosha = data.kaalSarpDosha;
+        renderMangalDosha(data.mangalDosha);
+        renderKaalSarpDosha(data.kaalSarpDosha);
+        btn.style.display = "none";
+      } catch (err) {
+        document.getElementById("mangalDoshaHolder").innerHTML = `<div style="color:#ff9d9d; font-size:13px;">Error: ${err.message}</div>`;
+        btn.disabled = false;
+        btn.textContent = "Check Doshas";
+      }
+    }
+
+    // North/South Indian chart style switch karta hai — South Indian pehli baar
+    // click hone par hi fetch hota hai (rate limit bachane ke liye)
+    async function switchChartStyle(style) {
       currentChartStyle = style;
       const chartHolder = document.getElementById("chartSvgHolder");
+
+      if (style === "south" && !savedChartSvgSouth) {
+        chartHolder.innerHTML = `<div style="color:#888; padding:20px;">Loading South Indian chart...</div>`;
+        try {
+          const res = await fetch("/api/chart-style", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dob: savedDob, tob: savedTob, lat: document.getElementById("lat").value, lon: document.getElementById("lon").value, style: "south-indian" }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Chart load nahi hua");
+          savedChartSvgSouth = data.chartSvg;
+        } catch (err) {
+          chartHolder.innerHTML = `<div style="color:#ff9d9d; padding:20px;">Error: ${err.message}</div>`;
+          updateChartStyleButtons(style);
+          return;
+        }
+      }
+
       const svg = style === "south" ? savedChartSvgSouth : savedChartSvg;
       if (svg) chartHolder.innerHTML = svg;
+      updateChartStyleButtons(style);
+    }
+
+    function updateChartStyleButtons(style) {
 
       const northBtn = document.getElementById("chartStyleNorthBtn");
       const southBtn = document.getElementById("chartStyleSouthBtn");
@@ -1015,13 +1061,13 @@
 
         if (!res.ok) throw new Error(data.error || "Kuch galat ho gaya");
 
-        // Agar chart mila hai to usko dikhao (default North Indian)
+        // Agar chart mila hai to usko dikhao (North Indian default; South on-demand)
         const chartContainer = document.getElementById("chartContainer");
-        if (data.chartSvg || data.chartSvgSouth) {
+        if (data.chartSvg) {
           chartContainer.style.display = "block";
           savedChartSvg = data.chartSvg;
-          savedChartSvgSouth = data.chartSvgSouth;
-          switchChartStyle(data.chartSvg ? "north" : "south");
+          savedChartSvgSouth = null; // naye kundli ke liye purana south chart clear karo
+          switchChartStyle("north");
         } else {
           chartContainer.style.display = "none";
         }
@@ -1029,11 +1075,20 @@
         // Planet positions (Graha) table dikhao
         renderPlanetTable(data.planetPositions);
 
-        // Mangal Dosh (Manglik) result dikhao
-        renderMangalDosha(data.mangalDosha);
+        // Dosha check card dikhao (button dabane par Mangal + Kaal Sarp check honge)
+        savedMangalDosha = null;
+        savedKaalSarpDosha = null;
+        document.getElementById("doshaContainer").style.display = "block";
+        document.getElementById("mangalDoshaHolder").innerHTML = "";
+        document.getElementById("kaalSarpDoshaHolder").innerHTML = "";
+        const doshaBtn = document.getElementById("doshaCheckBtn");
+        doshaBtn.style.display = "inline-block";
+        doshaBtn.disabled = false;
+        doshaBtn.textContent = "Check Doshas";
 
-        // Kaal Sarp Dosha result dikhao
-        renderKaalSarpDosha(data.kaalSarpDosha);
+        // Naye kundli ke liye Dasha/Transit cache bhi clear karo (chat lazy-fetch karega)
+        savedDashaPeriods = null;
+        savedTransitPositions = null;
 
         resultDiv.style.display = "block";
         resultDiv.textContent = data.careerHoroscope;
@@ -1047,9 +1102,6 @@
 
         // PDF aur Daily Horoscope ke liye baaki data save karo
         savedPlanetPositions = data.planetPositions;
-        savedMangalDosha = data.mangalDosha;
-        savedKaalSarpDosha = data.kaalSarpDosha;
-        savedDashaData = data.dashaData;
         savedCareerHoroscope = data.careerHoroscope;
         savedDob = payload.dob;
         savedTob = tob;
@@ -1307,6 +1359,29 @@
       sendBtn.disabled = true;
 
       try {
+        // Pehli baar chat use ho rahi ho to Dasha + Transit ek baar fetch karke cache kar lo
+        // (AI ko behtar, personalized jawab dene ke liye — baar baar fetch nahi karte)
+        if (savedDashaPeriods === null && savedTransitPositions === null) {
+          try {
+            const dtRes = await fetch("/api/dasha-transit", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                dob: savedDob, tob: savedTob,
+                lat: document.getElementById("lat").value,
+                lon: document.getElementById("lon").value,
+              }),
+            });
+            const dtData = await dtRes.json();
+            if (dtRes.ok) {
+              savedDashaPeriods = dtData.dashaPeriods;
+              savedTransitPositions = dtData.transitPositions;
+            }
+          } catch (dtErr) {
+            console.error("Dasha/Transit lazy fetch fail hua:", dtErr.message);
+          }
+        }
+
         const uid = localStorage.getItem("kundli_uid");
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -1318,7 +1393,8 @@
             planetPositions: savedPlanetPositions,
             mangalDosha: savedMangalDosha,
             kaalSarpDosha: savedKaalSarpDosha,
-            dashaData: savedDashaData,
+            dashaPeriods: savedDashaPeriods,
+            transitPositions: savedTransitPositions,
             question,
             history: chatHistory,
             language: selectedLanguage,
@@ -1328,9 +1404,9 @@
 
         if (!res.ok) throw new Error(data.error || "Kuch galat ho gaya");
 
-        // Bot ka jawab dikhao (ab structured, multi-line ho sakta hai, isliye pre-wrap use karte hain)
+        // Bot ka jawab dikhao (line breaks ke saath, kyunki jawab sections mein aata hai)
         messagesBox.innerHTML += `<div style="margin-bottom:10px; text-align:left;">
-          <span style="background:#fdf6ec; padding:10px 14px; border-radius:10px; display:inline-block; max-width:95%; white-space:pre-wrap; line-height:1.6;">${data.answer}</span>
+          <span style="background:#fdf6ec; padding:8px 12px; border-radius:10px; display:inline-block; max-width:85%; white-space:pre-wrap; line-height:1.5;">${data.answer}</span>
         </div>`;
         messagesBox.scrollTop = messagesBox.scrollHeight;
 
