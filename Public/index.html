@@ -585,6 +585,7 @@
     let savedPlanetPositions = null;
     let savedMangalDosha = null;
     let savedKaalSarpDosha = null;
+    let savedDashaData = null;
     let savedCareerHoroscope = "";
     let savedDob = "";
     let savedTob = "";
@@ -1048,6 +1049,7 @@
         savedPlanetPositions = data.planetPositions;
         savedMangalDosha = data.mangalDosha;
         savedKaalSarpDosha = data.kaalSarpDosha;
+        savedDashaData = data.dashaData;
         savedCareerHoroscope = data.careerHoroscope;
         savedDob = payload.dob;
         savedTob = tob;
@@ -1313,6 +1315,10 @@
             uid,
             name: savedName,
             kundliData: savedKundliData,
+            planetPositions: savedPlanetPositions,
+            mangalDosha: savedMangalDosha,
+            kaalSarpDosha: savedKaalSarpDosha,
+            dashaData: savedDashaData,
             question,
             history: chatHistory,
             language: selectedLanguage,
@@ -1322,9 +1328,9 @@
 
         if (!res.ok) throw new Error(data.error || "Kuch galat ho gaya");
 
-        // Bot ka jawab dikhao
+        // Bot ka jawab dikhao (ab structured, multi-line ho sakta hai, isliye pre-wrap use karte hain)
         messagesBox.innerHTML += `<div style="margin-bottom:10px; text-align:left;">
-          <span style="background:#fdf6ec; padding:8px 12px; border-radius:10px; display:inline-block; max-width:80%;">${data.answer}</span>
+          <span style="background:#fdf6ec; padding:10px 14px; border-radius:10px; display:inline-block; max-width:95%; white-space:pre-wrap; line-height:1.6;">${data.answer}</span>
         </div>`;
         messagesBox.scrollTop = messagesBox.scrollHeight;
 

@@ -291,8 +291,34 @@ async function getKaalSarpDosha({ dob, tob, lat, lon, tz }) {
 }
 
 // --------------------------------------------------------
-// Language codes ko poora naam do — Claude prompts mein use karne ke liye
+// STEP 2D-3: Mahadasha / Antardasha (Vimshottari Dasha) fetch karna
+// Ye batata hai abhi kaunse graha ka "period" chal raha hai — predictions ke liye zaroori
 // --------------------------------------------------------
+async function getDashaPeriods({ dob, tob, lat, lon, tz }) {
+  const token = await getProkeralaToken();
+
+  const timeWithSeconds = tob.length === 5 ? `${tob}:00` : tob;
+  const datetime = `${dob}T${timeWithSeconds}${tz || "+05:30"}`;
+
+  const url = new URL("https://api.prokerala.com/v2/astrology/dasha-periods");
+  url.searchParams.set("ayanamsa", "1");
+  url.searchParams.set("coordinates", `${lat},${lon}`);
+  url.searchParams.set("datetime", datetime);
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Dasha Periods API ne ye error diya:", errorBody);
+    throw new Error("Dasha periods fetch karne mein error: " + response.status + " - " + errorBody);
+  }
+
+  return response.json();
+}
+
+
 const LANGUAGE_NAMES = {
   hindi: "Hinglish (Hindi + English mix, jaisa Astrotalk pe astrologers baat karte hain)",
   english: "plain English",
@@ -544,19 +570,84 @@ Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur bal
 // --------------------------------------------------------
 // STEP 4: Chatbot — user apne sawal pooch sake apni kundli ke baare mein
 // --------------------------------------------------------
-async function askAstrologerBot({ name, kundliData, question, history, language }) {
+async function askAstrologerBot({
+  name,
+  kundliData,
+  planetPositions,
+  mangalDosha,
+  kaalSarpDosha,
+  dashaData,
+  question,
+  history,
+  language,
+}) {
   const langInstruction = getLanguageInstruction(language);
-  const systemPrompt = `Tum ek anubhavi (experienced), friendly Vedic astrologer ho, bilkul Astrotalk app ke astrologers jaisa.
 
-Is user ki kundli ka raw data:
+  const systemPrompt = `Tum ek senior, anubhavi (experienced) Vedic astrologer ho jisne 20+ saal se logon ki kundli padhi hai.
+Tum kabhi generic, template-jaisa jawab nahi dete — har jawab us specific insaan ki **poori kundli data ke gehre analysis** se aata hai.
+
+===========================================
+USER KI POORI KUNDLI DATA (SAB SOURCE OF TRUTH HAI)
+===========================================
 Naam: ${name}
-Kundli Data (JSON): ${JSON.stringify(kundliData)}
 
-Rules:
-- User ke sawaalon ka jawab isi kundli data ke aadhar par do
-- Jawab chhota, friendly aur samajhne layak rakho (3-5 lines max, jab tak user detail na maange)
-- Agar sawal astrology se related na ho, to politely bata do ki tum sirf astrology/career/relationship guidance de sakte ho
+1. Birth Details / Ascendant / Rashi / Nakshatra (Prokerala birth-details):
+${JSON.stringify(kundliData)}
+
+2. Grahon (Planets) ki exact position — Rashi, Nakshatra, Degree, Retrograde status:
+${planetPositions ? JSON.stringify(planetPositions) : "Available nahi hai is baar"}
+
+3. Mangal Dosha (Manglik) status:
+${mangalDosha ? JSON.stringify(mangalDosha) : "Available nahi hai is baar"}
+
+4. Kaal Sarp Dosha status:
+${kaalSarpDosha ? JSON.stringify(kaalSarpDosha) : "Available nahi hai is baar"}
+
+5. Mahadasha / Antardasha (current planetary period):
+${dashaData ? JSON.stringify(dashaData) : "Available nahi hai is baar"}
+
+===========================================
+TUMHARA KAAM — HAR SAWAL PE YE PROCESS FOLLOW KARO
+===========================================
+
+STEP 1 — Question Category pehchano:
+Career, Government Job, Private Job, Business, Marriage, Love Marriage, Relationship, Health,
+Education, Children, Finance, Foreign Settlement, Property, Court Cases, Travel,
+Spiritual Growth, Remedies, Gemstones, Daily Horoscope — ya jo bhi category ho.
+
+STEP 2 — Category ke hisaab se sirf RELEVANT factors analyze karo (upar diye JSON data mein se):
+- Career/Job: 10th house, 6th house, Saturn, Sun, Mercury, current Mahadasha/Antardasha
+- Business: 2nd, 7th, 10th, 11th house, Mercury, Jupiter, Rahu
+- Marriage/Love: 7th house, Venus, Jupiter, Dasha period
+- Health: 6th, 8th, 12th house, Mars, Saturn
+- Finance: 2nd, 11th house, Jupiter, Venus
+- (Aur categories ke liye jo bhi astrologically relevant grah/houses hon, apni knowledge se use karo)
+
+Jahan bhi data available ho wahan in cheezon ko dhyan mein rakho: Ascendant (Lagna), Moon Rashi, Sun sign,
+Nakshatra, planet degrees, retrograde status, exaltation/debilitation, combustion, current Dasha/Antardasha,
+aur agar data mein Yogas ya aspects (drishti) dikhein to unko bhi mention karo.
+
+STEP 3 — Jawab is format mein do (sirf jo sections relevant hon, sab zaroori nahi har baar):
+
+🔮 Kundli Analysis — kaunse houses/grahon ne is sawal ko affect kiya (2-3 lines)
+📖 Astrological Reason — kyun ye prediction ban rahi hai, simple bhasha mein
+🪐 Current Dasha — abhi ka Mahadasha/Antardasha is sawal pe kaise asar daal raha hai (agar data available ho)
+📅 Best Time — agar possible ho to rough time period batao (warna "abhi clear nahi" bol do)
+⭐ Prediction — seedha, samajhne layak answer
+🙏 Remedies — agar appropriate ho: mantra, daan, vrat, mandir jaana, dhyan (SIRF tab jab genuinely relevant ho, har baar nahi)
+💡 Practical Advice — ek chhota practical suggestion
+
+===========================================
+ZAROORI RULES
+===========================================
+- HAMESHA upar diye gaye asli kundli data (planets, houses, dasha) ke aadhar par jawab do — sirf DOB dekh ke generic baat mat karo
+- Kabhi bhi darawana (fear-creating) jawab mat do
+- Kabhi kisi cheez ki 100% guarantee mat do — hamesha "astrological possibility hai" jaisa tone rakho jab uncertain ho
+- Agar koi data missing hai (jaise Dasha available nahi hai), to usko honestly mention karo, bana ke mat batao
+- Gemstone recommend sirf tab karo jab kundli data se strongly support ho — warna avoid karo, cheaper remedies (mantra/daan/vrat) suggest karo
+- Agar sawal astrology se related na ho, to politely bata do ki tum sirf astrology guidance de sakte ho
 - Kabhi medical, legal, ya financial guarantee mat do — sirf astrological perspective do
+- Jawab thoda detailed ho sakta hai (structured sections ke saath), lekin har section 1-3 lines se zyada lamba na ho — rambling mat karo
 - ${langInstruction}`;
 
   // Pichli conversation history ko messages format mein convert karte hain
@@ -575,7 +666,7 @@ Rules:
     },
     body: JSON.stringify({
       model: "claude-sonnet-5",
-      max_tokens: 400,
+      max_tokens: 1000,
       system: systemPrompt,
       messages,
     }),
@@ -878,6 +969,14 @@ app.post("/api/horoscope", async (req, res) => {
       console.error("Kaal Sarp Dosha fetch fail hua, lekin aage badh rahe hain:", kaalErr.message);
     }
 
+    // 2E. Mahadasha/Antardasha bhi lao — predictions ke liye zaroori
+    let dashaData = null;
+    try {
+      dashaData = await getDashaPeriods({ dob, tob, lat, lon });
+    } catch (dashaErr) {
+      console.error("Dasha fetch fail hua, lekin aage badh rahe hain:", dashaErr.message);
+    }
+
     // 3. Us data ko Claude se samjhwao (career horoscope banwao)
     const careerHoroscope = await getCareerHoroscopeFromClaude({
       name,
@@ -894,6 +993,7 @@ app.post("/api/horoscope", async (req, res) => {
       planetPositions,
       mangalDosha,
       kaalSarpDosha,
+      dashaData,
       careerHoroscope,
     });
   } catch (err) {
@@ -979,7 +1079,18 @@ const CHAT_PRICE = 5;
 
 app.post("/api/chat", async (req, res) => {
   try {
-    const { uid, name, kundliData, question, history, language } = req.body;
+    const {
+      uid,
+      name,
+      kundliData,
+      planetPositions,
+      mangalDosha,
+      kaalSarpDosha,
+      dashaData,
+      question,
+      history,
+      language,
+    } = req.body;
 
     if (!uid || !name || !kundliData || !question) {
       return res.status(400).json({
@@ -1003,7 +1114,17 @@ app.post("/api/chat", async (req, res) => {
     const newWallet = currentWallet - CHAT_PRICE;
     await userRef.update({ wallet: newWallet });
 
-    const answer = await askAstrologerBot({ name, kundliData, question, history, language });
+    const answer = await askAstrologerBot({
+      name,
+      kundliData,
+      planetPositions,
+      mangalDosha,
+      kaalSarpDosha,
+      dashaData,
+      question,
+      history,
+      language,
+    });
 
     res.json({ success: true, answer, newWallet });
   } catch (err) {
