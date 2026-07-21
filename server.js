@@ -138,70 +138,8 @@ async function getProkeralaToken() {
 }
 
 // --------------------------------------------------------
-// PROKERALA RATE LIMITER
-// Free plan mein sirf 5 requests/60 seconds allowed hain. Ek hi horoscope
-// generate karne mein kai saari cheezein (chart, planets, doshas, dasha)
-// fetch karni padti hain, isliye saare Prokerala calls is throttle se
-// guzarte hain — automatically wait karega agar limit paas ho rahi ho,
-// aur agar phir bhi 429 aa jaye (server restart ke turant baad residual
-// usage ya dusre traffic ki wajah se) to retry karega.
-//
-// NOTE: Ye counter sirf isi process ki memory mein hai — jab bhi server
-// restart/redeploy hota hai, ye 0 se shuru hota hai. Isliye 5 ki jagah
-// 3 rakha hai (safety margin) taaki turant deploy ke baad bhi extra
-// buffer rahe agar Prokerala ke apne server pe pichla usage abhi tak
-// clear na hua ho.
+// STEP 2: Kundli / birth-chart data fetch karna
 // --------------------------------------------------------
-const PROKERALA_MAX_PER_WINDOW = 3;
-const PROKERALA_WINDOW_MS = 60 * 1000;
-let prokeralaCallTimestamps = [];
-
-function waitMs(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function prokeralaThrottle() {
-  // Jab tak window mein jagah na ho, wait karte raho
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const now = Date.now();
-    prokeralaCallTimestamps = prokeralaCallTimestamps.filter(
-      (t) => now - t < PROKERALA_WINDOW_MS
-    );
-
-    if (prokeralaCallTimestamps.length < PROKERALA_MAX_PER_WINDOW) {
-      prokeralaCallTimestamps.push(now);
-      return;
-    }
-
-    const oldestCall = prokeralaCallTimestamps[0];
-    const waitTime = PROKERALA_WINDOW_MS - (now - oldestCall) + 500; // 500ms safety buffer
-    console.log(`Prokerala rate limit paas hai, ${Math.ceil(waitTime / 1000)}s wait kar rahe hain...`);
-    await waitMs(waitTime);
-  }
-}
-
-// Prokerala ke saare GET-style calls isi se karo — throttle + auto-retry-on-429
-// 3 retries deta hai (server restart ke baad residual usage clear hone ke liye
-// zyada time chahiye ho sakta hai), har baar thoda zyada wait karta hai
-const RETRY_WAITS = [15000, 20000, 25000]; // 15s, 20s, 25s
-
-async function prokeralaFetch(url, options, retriesLeft = 3) {
-  await prokeralaThrottle();
-  const response = await fetch(url, options);
-
-  if (response.status === 429 && retriesLeft > 0) {
-    const waitTime = RETRY_WAITS[RETRY_WAITS.length - retriesLeft];
-    console.warn(`Prokerala se 429 mila, ${waitTime / 1000}s wait karke retry (${retriesLeft} retries bache hain)...`);
-    await waitMs(waitTime);
-    return prokeralaFetch(url, options, retriesLeft - 1);
-  }
-
-  return response;
-}
-
-
-
 async function getKundliData({ dob, tob, lat, lon, tz }) {
   const token = await getProkeralaToken();
 
@@ -215,7 +153,7 @@ async function getKundliData({ dob, tob, lat, lon, tz }) {
   url.searchParams.set("coordinates", `${lat},${lon}`);
   url.searchParams.set("datetime", datetime);
 
-  const response = await prokeralaFetch(url.toString(), {
+  const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -247,7 +185,7 @@ async function getKundliChartSvg({ dob, tob, lat, lon, tz, chartStyle }) {
   url.searchParams.set("chart_style", chartStyle || "north-indian");
   url.searchParams.set("format", "svg");
 
-  const response = await prokeralaFetch(url.toString(), {
+  const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -276,7 +214,7 @@ async function getPlanetPositions({ dob, tob, lat, lon, tz }) {
   url.searchParams.set("coordinates", `${lat},${lon}`);
   url.searchParams.set("datetime", datetime);
 
-  const response = await prokeralaFetch(url.toString(), {
+  const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -307,7 +245,7 @@ async function getMangalDosha({ dob, tob, lat, lon, tz }) {
   url.searchParams.set("coordinates", `${lat},${lon}`);
   url.searchParams.set("datetime", datetime);
 
-  const response = await prokeralaFetch(url.toString(), {
+  const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -337,7 +275,7 @@ async function getKaalSarpDosha({ dob, tob, lat, lon, tz }) {
   url.searchParams.set("coordinates", `${lat},${lon}`);
   url.searchParams.set("datetime", datetime);
 
-  const response = await prokeralaFetch(url.toString(), {
+  const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -353,7 +291,8 @@ async function getKaalSarpDosha({ dob, tob, lat, lon, tz }) {
 }
 
 // --------------------------------------------------------
-// STEP 2D-3: Dasha Periods (Mahadasha/Antardasha) — timing ke liye zaroori
+// STEP 2D-3: Mahadasha / Antardasha (Vimshottari Dasha) fetch karna
+// Ye batata hai abhi kaunse graha ka "period" chal raha hai — predictions ke liye zaroori
 // --------------------------------------------------------
 async function getDashaPeriods({ dob, tob, lat, lon, tz }) {
   const token = await getProkeralaToken();
@@ -366,7 +305,7 @@ async function getDashaPeriods({ dob, tob, lat, lon, tz }) {
   url.searchParams.set("coordinates", `${lat},${lon}`);
   url.searchParams.set("datetime", datetime);
 
-  const response = await prokeralaFetch(url.toString(), {
+  const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -374,33 +313,6 @@ async function getDashaPeriods({ dob, tob, lat, lon, tz }) {
     const errorBody = await response.text();
     console.error("Dasha Periods API ne ye error diya:", errorBody);
     throw new Error("Dasha periods fetch karne mein error: " + response.status + " - " + errorBody);
-  }
-
-  return response.json();
-}
-
-// --------------------------------------------------------
-// STEP 2D-4: Current Transit (Gochar) — aaj ke din grahon ki position,
-// birth chart ke houses se compare karne ke liye (birth place coordinates use karte hain)
-// --------------------------------------------------------
-async function getCurrentTransit({ lat, lon, tz }) {
-  const now = new Date();
-  const isoNow = now.toISOString().slice(0, 19) + (tz || "+05:30");
-
-  const token = await getProkeralaToken();
-  const url = new URL("https://api.prokerala.com/v2/astrology/planet-position");
-  url.searchParams.set("ayanamsa", "1");
-  url.searchParams.set("coordinates", `${lat},${lon}`);
-  url.searchParams.set("datetime", isoNow);
-
-  const response = await prokeralaFetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    console.error("Current Transit API ne ye error diya:", errorBody);
-    throw new Error("Current transit fetch karne mein error: " + response.status + " - " + errorBody);
   }
 
   return response.json();
@@ -562,7 +474,7 @@ async function getPanchang({ date, lat, lon }) {
   url.searchParams.set("coordinates", `${lat},${lon}`);
   url.searchParams.set("datetime", datetime);
 
-  const response = await prokeralaFetch(url.toString(), {
+  const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -595,7 +507,7 @@ async function getKundliMatch({ boy, girl }) {
   url.searchParams.set("girl_dob", girlDatetime);
   url.searchParams.set("girl_coordinates", `${girl.lat},${girl.lon}`);
 
-  const response = await prokeralaFetch(url.toString(), {
+  const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -664,54 +576,79 @@ async function askAstrologerBot({
   planetPositions,
   mangalDosha,
   kaalSarpDosha,
-  dashaPeriods,
-  transitPositions,
+  dashaData,
   question,
   history,
   language,
 }) {
   const langInstruction = getLanguageInstruction(language);
 
-  const systemPrompt = `Tum ek senior, anubhavi (highly experienced) Vedic astrologer ho — bilkul Astrotalk ke top-rated astrologers jaisa. Tumhara kaam hai user ki POORI Kundli ka gehrai se analysis karke, generic nahi balki uski apni kundli ke hisaab se personalized jawab dena.
+  const systemPrompt = `Tum ek senior, anubhavi (experienced) Vedic astrologer ho jisne 20+ saal se logon ki kundli padhi hai.
+Tum kabhi generic, template-jaisa jawab nahi dete — har jawab us specific insaan ki **poori kundli data ke gehre analysis** se aata hai.
 
-=== USER KI KUNDLI DATA (Prokerala API se) ===
+===========================================
+USER KI POORI KUNDLI DATA (SAB SOURCE OF TRUTH HAI)
+===========================================
 Naam: ${name}
-Birth Details / Ascendant / Rashi / Nakshatra (JSON): ${JSON.stringify(kundliData)}
-Planet Positions — Rashi, Nakshatra, Degree, Retrograde status (JSON): ${JSON.stringify(planetPositions)}
-Mangal Dosha (Manglik) Result: ${mangalDosha ? JSON.stringify(mangalDosha) : "abhi check nahi kiya gaya"}
-Kaal Sarp Dosha Result: ${kaalSarpDosha ? JSON.stringify(kaalSarpDosha) : "abhi check nahi kiya gaya"}
-Vimshottari Dasha Periods — Mahadasha/Antardasha (JSON): ${dashaPeriods ? JSON.stringify(dashaPeriods) : "abhi fetch nahi hua"}
-Current Transit (Gochar) — aaj ke grahon ki position (JSON): ${transitPositions ? JSON.stringify(transitPositions) : "abhi fetch nahi hua"}
 
-=== KAISE KAAM KARNA HAI ===
-1. JAWAB SIRF DOB SE MAT DO — hamesha upar diye gaye poore Kundli data (ascendant, rashi, nakshatra, planet positions/degrees/retrograde, dosha results, dasha, transit) ka analysis karke jawab do. Agar koi factor (jaise dasha ya transit) fetch nahi hua hai, to us baat ko honestly mention karo aur available data se hi best possible analysis do — kabhi data ka bahana banao mat.
+1. Birth Details / Ascendant / Rashi / Nakshatra (Prokerala birth-details):
+${JSON.stringify(kundliData)}
 
-2. QUESTION KI CATEGORY PEHCHANO (mentally, bina bataye): Career/Government Job/Private Job/Business/Marriage/Love/Relationship/Health/Education/Children/Finance/Foreign Settlement/Property/Court Case/Travel/Spiritual/Remedies/Gemstones/Daily Horoscope/General. Us category ke hisaab se sirf relevant houses aur grahon pe focus karo:
-   - Career/Job: 10th house, 6th house, Saturn, Sun, Mercury, current Mahadasha/Antardasha, transit
-   - Business: 2nd, 7th, 10th, 11th house, Mercury, Jupiter, Rahu
-   - Marriage/Relationship: 7th house, Venus, Jupiter, Dasha
-   - Health: 6th, 8th, 12th house, Mars, Saturn
-   - Finance: 2nd, 11th house, Jupiter, Venus
-   - Baaki categories ke liye apni Vedic astrology knowledge se sabse relevant factors chuno.
+2. Grahon (Planets) ki exact position — Rashi, Nakshatra, Degree, Retrograde status:
+${planetPositions ? JSON.stringify(planetPositions) : "Available nahi hai is baar"}
 
-3. Available data se jitna reasonably nikal sakte ho nikalo — planet ki rashi/degree se exaltation-debilitation, retrograde status, aur agar Sun ke paas degree ho to combustion jaise factors ka apna astrological gyaan use karke andaza lagao. Jahan data confirm nahi karta wahan "possibility" jaise words use karo, definite claim mat karo.
+3. Mangal Dosha (Manglik) status:
+${mangalDosha ? JSON.stringify(mangalDosha) : "Available nahi hai is baar"}
 
-4. JAWAB KA FORMAT (sirf jab relevant ho tabhi wo section daalo, sab kuch har jawab mein zabardasti mat thoso — chhote/casual sawaal ka chhota jawab bhi theek hai):
-🔮 Kundli Analysis — kaunse houses/planets is sawal ke liye relevant hain
-📖 Astrological Reason — kyun (reasoning)
-🪐 Current Dasha — abhi ki Mahadasha/Antardasha ka is par kya asar hai (agar data available ho)
-📅 Best Time — possible time period (agar bata sakte ho)
-⭐ Prediction — kya ho sakta hai
-🙏 Remedies — mantra, daan, vrat, mandir jaana, dhyan (gemstone sirf tab suggest karo jab kundli data strongly support kare, aur hamesha mention karo ki gemstone se pehle astrologer se consult karna chahiye)
-💡 Practical Advice — practical, real-world suggestion
+4. Kaal Sarp Dosha status:
+${kaalSarpDosha ? JSON.stringify(kaalSarpDosha) : "Available nahi hai is baar"}
 
-5. KABHI DAR MAT PHAILAO. Kabhi 100% guarantee mat do ki ye event hoga hi. Jahan uncertainty ho, saaf bolo "ye sirf ek astrological possibility hai, guarantee nahi".
+5. Mahadasha / Antardasha (current planetary period):
+${dashaData ? JSON.stringify(dashaData) : "Available nahi hai is baar"}
 
-6. Agar sawal astrology se related na ho, to politely bata do ki tum sirf astrology/career/relationship/health guidance de sakte ho. Kabhi medical/legal/financial guarantee mat do.
+===========================================
+TUMHARA KAAM — HAR SAWAL PE YE PROCESS FOLLOW KARO
+===========================================
 
-7. LANGUAGE: User jis language/script mein sawal likhe usi mein jawab do (agar user Hindi mein likhe to Hindi mein, English mein likhe to English mein, Hinglish mein likhe to Hinglish mein). Agar user ki language clear na ho to ye default follow karo: ${langInstruction}
+STEP 1 — Question Category pehchano:
+Career, Government Job, Private Job, Business, Marriage, Love Marriage, Relationship, Health,
+Education, Children, Finance, Foreign Settlement, Property, Court Cases, Travel,
+Spiritual Growth, Remedies, Gemstones, Daily Horoscope — ya jo bhi category ho.
 
-8. Jawab natural conversational tone mein rakho — bullet/emoji headings tabhi use karo jab jawab detailed ho; chhote follow-up sawaalon ka seedha chhota jawab do, poora format zabardasti mat thoso.`;
+STEP 2 — Category ke hisaab se sirf RELEVANT factors analyze karo (upar diye JSON data mein se):
+- Career/Job: 10th house, 6th house, Saturn, Sun, Mercury, current Mahadasha/Antardasha
+- Business: 2nd, 7th, 10th, 11th house, Mercury, Jupiter, Rahu
+- Marriage/Love: 7th house, Venus, Jupiter, Dasha period
+- Health: 6th, 8th, 12th house, Mars, Saturn
+- Finance: 2nd, 11th house, Jupiter, Venus
+- (Aur categories ke liye jo bhi astrologically relevant grah/houses hon, apni knowledge se use karo)
+
+Jahan bhi data available ho wahan in cheezon ko dhyan mein rakho: Ascendant (Lagna), Moon Rashi, Sun sign,
+Nakshatra, planet degrees, retrograde status, exaltation/debilitation, combustion, current Dasha/Antardasha,
+aur agar data mein Yogas ya aspects (drishti) dikhein to unko bhi mention karo.
+
+STEP 3 — Jawab is format mein do (sirf jo sections relevant hon, sab zaroori nahi har baar):
+
+🔮 Kundli Analysis — kaunse houses/grahon ne is sawal ko affect kiya (2-3 lines)
+📖 Astrological Reason — kyun ye prediction ban rahi hai, simple bhasha mein
+🪐 Current Dasha — abhi ka Mahadasha/Antardasha is sawal pe kaise asar daal raha hai (agar data available ho)
+📅 Best Time — agar possible ho to rough time period batao (warna "abhi clear nahi" bol do)
+⭐ Prediction — seedha, samajhne layak answer
+🙏 Remedies — agar appropriate ho: mantra, daan, vrat, mandir jaana, dhyan (SIRF tab jab genuinely relevant ho, har baar nahi)
+💡 Practical Advice — ek chhota practical suggestion
+
+===========================================
+ZAROORI RULES
+===========================================
+- HAMESHA upar diye gaye asli kundli data (planets, houses, dasha) ke aadhar par jawab do — sirf DOB dekh ke generic baat mat karo
+- Kabhi bhi darawana (fear-creating) jawab mat do
+- Kabhi kisi cheez ki 100% guarantee mat do — hamesha "astrological possibility hai" jaisa tone rakho jab uncertain ho
+- Agar koi data missing hai (jaise Dasha available nahi hai), to usko honestly mention karo, bana ke mat batao
+- Gemstone recommend sirf tab karo jab kundli data se strongly support ho — warna avoid karo, cheaper remedies (mantra/daan/vrat) suggest karo
+- Agar sawal astrology se related na ho, to politely bata do ki tum sirf astrology guidance de sakte ho
+- Kabhi medical, legal, ya financial guarantee mat do — sirf astrological perspective do
+- Jawab thoda detailed ho sakta hai (structured sections ke saath), lekin har section 1-3 lines se zyada lamba na ho — rambling mat karo
+- ${langInstruction}`;
 
   // Pichli conversation history ko messages format mein convert karte hain
   const messages = (history || []).map((h) => ({
@@ -729,7 +666,7 @@ Current Transit (Gochar) — aaj ke grahon ki position (JSON): ${transitPosition
     },
     body: JSON.stringify({
       model: "claude-sonnet-5",
-      max_tokens: 900,
+      max_tokens: 1000,
       system: systemPrompt,
       messages,
     }),
@@ -993,8 +930,9 @@ app.post("/api/horoscope", async (req, res) => {
     // 1. Real kundli data lao
     const kundliData = await getKundliData({ dob, tob, lat, lon });
 
-    // 2. North Indian chart (SVG) lao — South Indian baad mein on-demand fetch hoga
-    //    (Prokerala free plan ka rate limit — 5 req/60s — bachane ke liye)
+    // 2. North Indian style chart (SVG) lao
+    // NOTE: South Indian chart ab yahan nahi mangwate — rate limit bachane ke liye
+    // usko sirf tab fetch karte hain jab user South toggle dabaye (lazy load)
     let chartSvg = null;
     try {
       chartSvg = await getKundliChartSvg({ dob, tob, lat, lon, chartStyle: "north-indian" });
@@ -1011,6 +949,25 @@ app.post("/api/horoscope", async (req, res) => {
       console.error("Planet position fetch fail hua, lekin aage badh rahe hain:", planetErr.message);
     }
 
+    // 2C. Mangal Dosh (Manglik) check bhi karo
+    let mangalDosha = null;
+    try {
+      mangalDosha = await getMangalDosha({ dob, tob, lat, lon });
+    } catch (mangalErr) {
+      console.error("Mangal Dosha fetch fail hua, lekin aage badh rahe hain:", mangalErr.message);
+    }
+
+    // 2D. Kaal Sarp Dosha check bhi karo
+    let kaalSarpDosha = null;
+    try {
+      kaalSarpDosha = await getKaalSarpDosha({ dob, tob, lat, lon });
+    } catch (kaalErr) {
+      console.error("Kaal Sarp Dosha fetch fail hua, lekin aage badh rahe hain:", kaalErr.message);
+    }
+
+    // NOTE: Dasha (Mahadasha/Antardasha) ab yahan nahi mangwate — rate limit bachane ke liye.
+    // Usko chat khulte waqt lazy-load karte hain (dekho /api/dasha endpoint neeche)
+
     // 3. Us data ko Claude se samjhwao (career horoscope banwao)
     const careerHoroscope = await getCareerHoroscopeFromClaude({
       name,
@@ -1024,6 +981,8 @@ app.post("/api/horoscope", async (req, res) => {
       kundliRaw: kundliData,
       chartSvg,
       planetPositions,
+      mangalDosha,
+      kaalSarpDosha,
       careerHoroscope,
     });
   } catch (err) {
@@ -1033,16 +992,17 @@ app.post("/api/horoscope", async (req, res) => {
 });
 
 // --------------------------------------------------------
-// CHART STYLE ENDPOINT: South Indian chart on-demand (jab user toggle kare)
+// SOUTH CHART (LAZY LOAD): User jab South Indian toggle dabaye tabhi ye call hota hai
+// (rate limit bachane ke liye horoscope ke saath hi nahi mangwate)
 // --------------------------------------------------------
-app.post("/api/chart-style", async (req, res) => {
+app.get("/api/chart-south", async (req, res) => {
   try {
-    const { dob, tob, lat, lon, style } = req.body;
+    const { dob, tob, lat, lon } = req.query;
     if (!dob || !tob || !lat || !lon) {
       return res.status(400).json({ error: "dob, tob, lat, lon zaroori hain" });
     }
-    const chartSvg = await getKundliChartSvg({ dob, tob, lat, lon, chartStyle: style || "south-indian" });
-    res.json({ success: true, chartSvg });
+    const chartSvgSouth = await getKundliChartSvg({ dob, tob, lat, lon, chartStyle: "south-indian" });
+    res.json({ success: true, chartSvgSouth });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -1050,62 +1010,16 @@ app.post("/api/chart-style", async (req, res) => {
 });
 
 // --------------------------------------------------------
-// DOSHAS ENDPOINT: Mangal Dosha + Kaal Sarp Dosha on-demand (jab user "Check" dabaye)
+// DASHA (LAZY LOAD): User jab chat pehli baar khole tabhi ye call hota hai
 // --------------------------------------------------------
-app.post("/api/doshas", async (req, res) => {
+app.get("/api/dasha", async (req, res) => {
   try {
-    const { dob, tob, lat, lon } = req.body;
+    const { dob, tob, lat, lon } = req.query;
     if (!dob || !tob || !lat || !lon) {
       return res.status(400).json({ error: "dob, tob, lat, lon zaroori hain" });
     }
-
-    let mangalDosha = null;
-    try {
-      mangalDosha = await getMangalDosha({ dob, tob, lat, lon });
-    } catch (mangalErr) {
-      console.error("Mangal Dosha fetch fail hua:", mangalErr.message);
-    }
-
-    let kaalSarpDosha = null;
-    try {
-      kaalSarpDosha = await getKaalSarpDosha({ dob, tob, lat, lon });
-    } catch (kaalErr) {
-      console.error("Kaal Sarp Dosha fetch fail hua:", kaalErr.message);
-    }
-
-    res.json({ success: true, mangalDosha, kaalSarpDosha });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// --------------------------------------------------------
-// DASHA + TRANSIT ENDPOINT: AI Chat engine ke liye — ek baar fetch hota hai
-// (jab user pehli baar chat khole), phir frontend cache karke reuse karta hai
-// --------------------------------------------------------
-app.post("/api/dasha-transit", async (req, res) => {
-  try {
-    const { dob, tob, lat, lon } = req.body;
-    if (!dob || !tob || !lat || !lon) {
-      return res.status(400).json({ error: "dob, tob, lat, lon zaroori hain" });
-    }
-
-    let dashaPeriods = null;
-    try {
-      dashaPeriods = await getDashaPeriods({ dob, tob, lat, lon });
-    } catch (dashaErr) {
-      console.error("Dasha fetch fail hua:", dashaErr.message);
-    }
-
-    let transitPositions = null;
-    try {
-      transitPositions = await getCurrentTransit({ lat, lon });
-    } catch (transitErr) {
-      console.error("Transit fetch fail hua:", transitErr.message);
-    }
-
-    res.json({ success: true, dashaPeriods, transitPositions });
+    const dashaData = await getDashaPeriods({ dob, tob, lat, lon });
+    res.json({ success: true, dashaData });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -1190,8 +1104,16 @@ const CHAT_PRICE = 5;
 app.post("/api/chat", async (req, res) => {
   try {
     const {
-      uid, name, kundliData, planetPositions, mangalDosha, kaalSarpDosha,
-      dashaPeriods, transitPositions, question, history, language,
+      uid,
+      name,
+      kundliData,
+      planetPositions,
+      mangalDosha,
+      kaalSarpDosha,
+      dashaData,
+      question,
+      history,
+      language,
     } = req.body;
 
     if (!uid || !name || !kundliData || !question) {
@@ -1217,8 +1139,15 @@ app.post("/api/chat", async (req, res) => {
     await userRef.update({ wallet: newWallet });
 
     const answer = await askAstrologerBot({
-      name, kundliData, planetPositions, mangalDosha, kaalSarpDosha,
-      dashaPeriods, transitPositions, question, history, language,
+      name,
+      kundliData,
+      planetPositions,
+      mangalDosha,
+      kaalSarpDosha,
+      dashaData,
+      question,
+      history,
+      language,
     });
 
     res.json({ success: true, answer, newWallet });
