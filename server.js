@@ -89,6 +89,33 @@ const db = getFirestore();
 const authAdmin = getAuth();
 
 // --------------------------------------------------------
+// CACHING: Ek hi kundli (same DOB/TOB/place) ke liye Prokerala ko
+// baar-baar call na karna pade, isliye result Firestore mein cache karte hain
+// (birth chart data kabhi nahi badalta, isliye hamesha ke liye cache safe hai)
+// --------------------------------------------------------
+function makeCacheKey(prefix, { dob, tob, lat, lon }) {
+  const raw = `${prefix}_${dob}_${tob}_${lat}_${lon}`;
+  return raw.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 200);
+}
+
+async function getCached(key) {
+  try {
+    const doc = await db.collection("prokerala_cache").doc(key).get();
+    return doc.exists ? doc.data().value : null;
+  } catch {
+    return null; // cache read fail ho to bhi aage badho, fresh fetch karega
+  }
+}
+
+async function setCached(key, value) {
+  try {
+    await db.collection("prokerala_cache").doc(key).set({ value, cachedAt: Date.now() });
+  } catch (err) {
+    console.error("Cache save fail hua (koi badi baat nahi):", err.message);
+  }
+}
+
+// --------------------------------------------------------
 // Razorpay client (wallet mein paisa add karne ke liye)
 // --------------------------------------------------------
 const razorpay = new Razorpay({
@@ -927,46 +954,33 @@ app.post("/api/horoscope", async (req, res) => {
       });
     }
 
-    // 1. Real kundli data lao
-    const kundliData = await getKundliData({ dob, tob, lat, lon });
+    // 1. Real kundli data lao (cache check pehle karte hain)
+    const kundliCacheKey = makeCacheKey("kundli", { dob, tob, lat, lon });
+    let kundliData = await getCached(kundliCacheKey);
+    if (!kundliData) {
+      kundliData = await getKundliData({ dob, tob, lat, lon });
+      await setCached(kundliCacheKey, kundliData);
+    }
 
-    // 2. North Indian style chart (SVG) lao
+    // 2. North Indian style chart (SVG) lao (cache check pehle karte hain)
     // NOTE: South Indian chart ab yahan nahi mangwate — rate limit bachane ke liye
     // usko sirf tab fetch karte hain jab user South toggle dabaye (lazy load)
-    let chartSvg = null;
-    try {
-      chartSvg = await getKundliChartSvg({ dob, tob, lat, lon, chartStyle: "north-indian" });
-    } catch (chartErr) {
-      // Agar chart fail ho jaye to bhi horoscope text dikhana band mat karo
-      console.error("North chart fetch fail hua, lekin aage badh rahe hain:", chartErr.message);
+    const chartCacheKey = makeCacheKey("chart_north", { dob, tob, lat, lon });
+    let chartSvg = await getCached(chartCacheKey);
+    if (!chartSvg) {
+      try {
+        chartSvg = await getKundliChartSvg({ dob, tob, lat, lon, chartStyle: "north-indian" });
+        await setCached(chartCacheKey, chartSvg);
+      } catch (chartErr) {
+        // Agar chart fail ho jaye to bhi horoscope text dikhana band mat karo
+        console.error("North chart fetch fail hua, lekin aage badh rahe hain:", chartErr.message);
+      }
     }
 
-    // 2B. Grahon (planets) ki exact position bhi lao — pandit logon ke liye
-    let planetPositions = null;
-    try {
-      planetPositions = await getPlanetPositions({ dob, tob, lat, lon });
-    } catch (planetErr) {
-      console.error("Planet position fetch fail hua, lekin aage badh rahe hain:", planetErr.message);
-    }
-
-    // 2C. Mangal Dosh (Manglik) check bhi karo
-    let mangalDosha = null;
-    try {
-      mangalDosha = await getMangalDosha({ dob, tob, lat, lon });
-    } catch (mangalErr) {
-      console.error("Mangal Dosha fetch fail hua, lekin aage badh rahe hain:", mangalErr.message);
-    }
-
-    // 2D. Kaal Sarp Dosha check bhi karo
-    let kaalSarpDosha = null;
-    try {
-      kaalSarpDosha = await getKaalSarpDosha({ dob, tob, lat, lon });
-    } catch (kaalErr) {
-      console.error("Kaal Sarp Dosha fetch fail hua, lekin aage badh rahe hain:", kaalErr.message);
-    }
-
-    // NOTE: Dasha (Mahadasha/Antardasha) ab yahan nahi mangwate — rate limit bachane ke liye.
-    // Usko chat khulte waqt lazy-load karte hain (dekho /api/dasha endpoint neeche)
+    // NOTE: Planet Positions, Mangal Dosha, Kaal Sarp Dosha, aur Dasha ab yahan nahi
+    // mangwate — rate limit bachane ke liye. Ye sab ab "on-demand" buttons se lazy-load
+    // hote hain (dekho neeche /api/planet-positions, /api/mangal-dosha,
+    // /api/kaal-sarp-dosha, /api/dasha endpoints)
 
     // 3. Us data ko Claude se samjhwao (career horoscope banwao)
     const careerHoroscope = await getCareerHoroscopeFromClaude({
@@ -980,9 +994,6 @@ app.post("/api/horoscope", async (req, res) => {
       success: true,
       kundliRaw: kundliData,
       chartSvg,
-      planetPositions,
-      mangalDosha,
-      kaalSarpDosha,
       careerHoroscope,
     });
   } catch (err) {
@@ -992,8 +1003,7 @@ app.post("/api/horoscope", async (req, res) => {
 });
 
 // --------------------------------------------------------
-// SOUTH CHART (LAZY LOAD): User jab South Indian toggle dabaye tabhi ye call hota hai
-// (rate limit bachane ke liye horoscope ke saath hi nahi mangwate)
+// SOUTH CHART (LAZY LOAD + CACHED): User jab South Indian toggle dabaye tabhi ye call hota hai
 // --------------------------------------------------------
 app.get("/api/chart-south", async (req, res) => {
   try {
@@ -1001,7 +1011,12 @@ app.get("/api/chart-south", async (req, res) => {
     if (!dob || !tob || !lat || !lon) {
       return res.status(400).json({ error: "dob, tob, lat, lon zaroori hain" });
     }
-    const chartSvgSouth = await getKundliChartSvg({ dob, tob, lat, lon, chartStyle: "south-indian" });
+    const cacheKey = makeCacheKey("chart_south", { dob, tob, lat, lon });
+    let chartSvgSouth = await getCached(cacheKey);
+    if (!chartSvgSouth) {
+      chartSvgSouth = await getKundliChartSvg({ dob, tob, lat, lon, chartStyle: "south-indian" });
+      await setCached(cacheKey, chartSvgSouth);
+    }
     res.json({ success: true, chartSvgSouth });
   } catch (err) {
     console.error(err);
@@ -1010,7 +1025,7 @@ app.get("/api/chart-south", async (req, res) => {
 });
 
 // --------------------------------------------------------
-// DASHA (LAZY LOAD): User jab chat pehli baar khole tabhi ye call hota hai
+// DASHA (LAZY LOAD + CACHED): User jab chat pehli baar khole tabhi ye call hota hai
 // --------------------------------------------------------
 app.get("/api/dasha", async (req, res) => {
   try {
@@ -1018,8 +1033,79 @@ app.get("/api/dasha", async (req, res) => {
     if (!dob || !tob || !lat || !lon) {
       return res.status(400).json({ error: "dob, tob, lat, lon zaroori hain" });
     }
-    const dashaData = await getDashaPeriods({ dob, tob, lat, lon });
+    const cacheKey = makeCacheKey("dasha", { dob, tob, lat, lon });
+    let dashaData = await getCached(cacheKey);
+    if (!dashaData) {
+      dashaData = await getDashaPeriods({ dob, tob, lat, lon });
+      await setCached(cacheKey, dashaData);
+    }
     res.json({ success: true, dashaData });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --------------------------------------------------------
+// MANGAL DOSHA (LAZY LOAD + CACHED): User "Check Mangal Dosha" button dabaye tab
+// --------------------------------------------------------
+app.get("/api/mangal-dosha", async (req, res) => {
+  try {
+    const { dob, tob, lat, lon } = req.query;
+    if (!dob || !tob || !lat || !lon) {
+      return res.status(400).json({ error: "dob, tob, lat, lon zaroori hain" });
+    }
+    const cacheKey = makeCacheKey("mangal", { dob, tob, lat, lon });
+    let mangalDosha = await getCached(cacheKey);
+    if (!mangalDosha) {
+      mangalDosha = await getMangalDosha({ dob, tob, lat, lon });
+      await setCached(cacheKey, mangalDosha);
+    }
+    res.json({ success: true, mangalDosha });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --------------------------------------------------------
+// KAAL SARP DOSHA (LAZY LOAD + CACHED): User "Check Kaal Sarp Dosha" button dabaye tab
+// --------------------------------------------------------
+app.get("/api/kaal-sarp-dosha", async (req, res) => {
+  try {
+    const { dob, tob, lat, lon } = req.query;
+    if (!dob || !tob || !lat || !lon) {
+      return res.status(400).json({ error: "dob, tob, lat, lon zaroori hain" });
+    }
+    const cacheKey = makeCacheKey("kaalsarp", { dob, tob, lat, lon });
+    let kaalSarpDosha = await getCached(cacheKey);
+    if (!kaalSarpDosha) {
+      kaalSarpDosha = await getKaalSarpDosha({ dob, tob, lat, lon });
+      await setCached(cacheKey, kaalSarpDosha);
+    }
+    res.json({ success: true, kaalSarpDosha });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --------------------------------------------------------
+// PLANET POSITIONS (LAZY LOAD + CACHED): User "Show Graha Positions" button dabaye tab
+// --------------------------------------------------------
+app.get("/api/planet-positions", async (req, res) => {
+  try {
+    const { dob, tob, lat, lon } = req.query;
+    if (!dob || !tob || !lat || !lon) {
+      return res.status(400).json({ error: "dob, tob, lat, lon zaroori hain" });
+    }
+    const cacheKey = makeCacheKey("planets", { dob, tob, lat, lon });
+    let planetPositions = await getCached(cacheKey);
+    if (!planetPositions) {
+      planetPositions = await getPlanetPositions({ dob, tob, lat, lon });
+      await setCached(cacheKey, planetPositions);
+    }
+    res.json({ success: true, planetPositions });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

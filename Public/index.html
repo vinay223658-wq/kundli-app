@@ -388,6 +388,16 @@
     <div id="chartSvgHolder" style="background:white; padding:12px; border-radius:10px; border:1px solid #eadfca;"></div>
   </div>
 
+  <!-- On-demand extra details: rate limit bachane ke liye ye sirf button dabane pe load hote hain -->
+  <div class="card" style="margin-top: 20px;">
+    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">🔎 More Details (on demand)</h3>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button id="loadPlanetBtn" onclick="loadPlanetPositions()" style="width:auto; margin-top:0; padding:8px 14px; font-size:13px;">🪐 Graha Positions</button>
+      <button id="loadMangalBtn" onclick="loadMangalDosha()" style="width:auto; margin-top:0; padding:8px 14px; font-size:13px;">♂️ Mangal Dosh</button>
+      <button id="loadKaalSarpBtn" onclick="loadKaalSarpDosha()" style="width:auto; margin-top:0; padding:8px 14px; font-size:13px;">🐍 Kaal Sarp Dosha</button>
+    </div>
+  </div>
+
   <div id="planetContainer" class="card" style="display:none; margin-top: 20px;">
     <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">🪐 Graha Positions (Planetary Details)</h3>
     <div id="planetTableHolder" style="overflow-x:auto;"></div>
@@ -969,6 +979,104 @@
     }
 
     // North/South Indian chart style switch karta hai (dono pehle se fetch ho chuke hote hain)
+    // Ye "silent" versions hain — chat ke liye background mein fetch karte hain,
+    // button ki UI (text/disabled) ko touch nahi karte
+    async function loadPlanetPositionsSilently() {
+      try {
+        const res = await fetch(`/api/planet-positions?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`);
+        const data = await res.json();
+        if (res.ok) {
+          savedPlanetPositions = data.planetPositions;
+          renderPlanetTable(savedPlanetPositions);
+        }
+      } catch (err) {
+        console.error("Planet positions silent fetch failed:", err.message);
+      }
+    }
+
+    async function loadMangalDoshaSilently() {
+      try {
+        const res = await fetch(`/api/mangal-dosha?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`);
+        const data = await res.json();
+        if (res.ok) {
+          savedMangalDosha = data.mangalDosha;
+          renderMangalDosha(savedMangalDosha);
+        }
+      } catch (err) {
+        console.error("Mangal Dosha silent fetch failed:", err.message);
+      }
+    }
+
+    async function loadKaalSarpDoshaSilently() {
+      try {
+        const res = await fetch(`/api/kaal-sarp-dosha?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`);
+        const data = await res.json();
+        if (res.ok) {
+          savedKaalSarpDosha = data.kaalSarpDosha;
+          renderKaalSarpDosha(savedKaalSarpDosha);
+        }
+      } catch (err) {
+        console.error("Kaal Sarp Dosha silent fetch failed:", err.message);
+      }
+    }
+
+    // Graha Positions ko button dabane pe load karta hai (rate limit bachane ke liye on-demand)
+    async function loadPlanetPositions() {
+      const btn = document.getElementById("loadPlanetBtn");
+      btn.disabled = true;
+      btn.textContent = "Loading...";
+      try {
+        const res = await fetch(`/api/planet-positions?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Error loading planet positions");
+        savedPlanetPositions = data.planetPositions;
+        renderPlanetTable(savedPlanetPositions);
+      } catch (err) {
+        alert("Error: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "🪐 Graha Positions";
+      }
+    }
+
+    // Mangal Dosha ko button dabane pe load karta hai
+    async function loadMangalDosha() {
+      const btn = document.getElementById("loadMangalBtn");
+      btn.disabled = true;
+      btn.textContent = "Loading...";
+      try {
+        const res = await fetch(`/api/mangal-dosha?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Error loading Mangal Dosha");
+        savedMangalDosha = data.mangalDosha;
+        renderMangalDosha(savedMangalDosha);
+      } catch (err) {
+        alert("Error: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "♂️ Mangal Dosh";
+      }
+    }
+
+    // Kaal Sarp Dosha ko button dabane pe load karta hai
+    async function loadKaalSarpDosha() {
+      const btn = document.getElementById("loadKaalSarpBtn");
+      btn.disabled = true;
+      btn.textContent = "Loading...";
+      try {
+        const res = await fetch(`/api/kaal-sarp-dosha?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Error loading Kaal Sarp Dosha");
+        savedKaalSarpDosha = data.kaalSarpDosha;
+        renderKaalSarpDosha(savedKaalSarpDosha);
+      } catch (err) {
+        alert("Error: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "🐍 Kaal Sarp Dosha";
+      }
+    }
+
     // Dasha data ko background mein (delay ke saath) fetch karta hai — rate limit bachane ke liye
     async function fetchDashaLazily() {
       if (savedDashaData || !savedDob) return; // already fetched, ya data available nahi
@@ -1055,14 +1163,8 @@
           chartContainer.style.display = "none";
         }
 
-        // Planet positions (Graha) table dikhao
-        renderPlanetTable(data.planetPositions);
-
-        // Mangal Dosh (Manglik) result dikhao
-        renderMangalDosha(data.mangalDosha);
-
-        // Kaal Sarp Dosha result dikhao
-        renderKaalSarpDosha(data.kaalSarpDosha);
+        // NOTE: Planet positions, Mangal Dosha, Kaal Sarp Dosha ab automatic nahi dikhte —
+        // "More Details" section ke buttons se on-demand load honge (rate limit bachane ke liye)
 
         resultDiv.style.display = "block";
         resultDiv.textContent = data.careerHoroscope;
@@ -1075,9 +1177,8 @@
         document.getElementById("chatSection").style.display = "block";
 
         // PDF aur Daily Horoscope ke liye baaki data save karo
-        savedPlanetPositions = data.planetPositions;
-        savedMangalDosha = data.mangalDosha;
-        savedKaalSarpDosha = data.kaalSarpDosha;
+        // NOTE: Planet Positions, Mangal Dosha, Kaal Sarp Dosha ab yahan save nahi hote —
+        // ab ye "Check" buttons se on-demand load honge (rate limit bachane ke liye)
         savedCareerHoroscope = data.careerHoroscope;
         savedDob = payload.dob;
         savedTob = tob;
@@ -1341,8 +1442,13 @@
       sendBtn.disabled = true;
 
       try {
-        // Agar Dasha abhi tak nahi aayi (background fetch complete nahi hui), ek baar try kar lete hain
-        if (!savedDashaData) await fetchDashaLazily();
+        // Agar ye sab abhi tak load nahi hui, ek baar try kar lete hain (chat ko poora context mile)
+        const lazyFetches = [];
+        if (!savedDashaData) lazyFetches.push(fetchDashaLazily());
+        if (!savedPlanetPositions) lazyFetches.push(loadPlanetPositionsSilently());
+        if (!savedMangalDosha) lazyFetches.push(loadMangalDoshaSilently());
+        if (!savedKaalSarpDosha) lazyFetches.push(loadKaalSarpDoshaSilently());
+        await Promise.allSettled(lazyFetches);
 
         const uid = localStorage.getItem("kundli_uid");
         const res = await fetch("/api/chat", {
