@@ -1142,6 +1142,15 @@
       btn.textContent = "Generating your Kundli...";
       resultDiv.style.display = "none";
 
+      // Naya horoscope generate ho raha hai — purana on-demand data reset kar dete hain
+      savedPlanetPositions = null;
+      savedMangalDosha = null;
+      savedKaalSarpDosha = null;
+      savedDashaData = null;
+      document.getElementById("planetContainer").style.display = "none";
+      document.getElementById("mangalDoshaContainer").style.display = "none";
+      document.getElementById("kaalSarpDoshaContainer").style.display = "none";
+
       try {
         const res = await fetch("/api/horoscope", {
           method: "POST",
