@@ -693,7 +693,7 @@ ZAROORI RULES
     },
     body: JSON.stringify({
       model: "claude-sonnet-5",
-      max_tokens: 1000,
+      max_tokens: 2000,
       system: systemPrompt,
       messages,
     }),
@@ -707,6 +707,12 @@ ZAROORI RULES
 
   const data = await response.json();
   const textBlock = data.content.find((c) => c.type === "text");
+
+  if (!textBlock || !textBlock.text) {
+    // Kuch gadbad hai — poora response log karte hain debug karne ke liye
+    console.error("Claude ne khali/unexpected response diya. Poora response:", JSON.stringify(data));
+  }
+
   return textBlock ? textBlock.text : "";
 }
 
