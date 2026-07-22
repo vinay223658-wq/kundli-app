@@ -983,7 +983,7 @@
     // button ki UI (text/disabled) ko touch nahi karte
     async function loadPlanetPositionsSilently() {
       try {
-        const res = await fetch(`/api/planet-positions?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`);
+        const res = await fetch(`/api/planet-positions?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`, { signal: AbortSignal.timeout(12000) });
         const data = await res.json();
         if (res.ok) {
           savedPlanetPositions = data.planetPositions;
@@ -996,7 +996,7 @@
 
     async function loadMangalDoshaSilently() {
       try {
-        const res = await fetch(`/api/mangal-dosha?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`);
+        const res = await fetch(`/api/mangal-dosha?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`, { signal: AbortSignal.timeout(12000) });
         const data = await res.json();
         if (res.ok) {
           savedMangalDosha = data.mangalDosha;
@@ -1009,7 +1009,7 @@
 
     async function loadKaalSarpDoshaSilently() {
       try {
-        const res = await fetch(`/api/kaal-sarp-dosha?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`);
+        const res = await fetch(`/api/kaal-sarp-dosha?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`, { signal: AbortSignal.timeout(12000) });
         const data = await res.json();
         if (res.ok) {
           savedKaalSarpDosha = data.kaalSarpDosha;
@@ -1081,7 +1081,7 @@
     async function fetchDashaLazily() {
       if (savedDashaData || !savedDob) return; // already fetched, ya data available nahi
       try {
-        const res = await fetch(`/api/dasha?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`);
+        const res = await fetch(`/api/dasha?dob=${savedDob}&tob=${savedTob}&lat=${savedLat}&lon=${savedLon}`, { signal: AbortSignal.timeout(12000) });
         const data = await res.json();
         if (res.ok) savedDashaData = data.dashaData;
       } catch (err) {
@@ -1446,6 +1446,8 @@
       messagesBox.innerHTML += `<div style="margin-bottom:10px; text-align:right;">
         <span style="background:#b5501a; color:white; padding:8px 12px; border-radius:10px; display:inline-block; max-width:80%;">${question}</span>
       </div>`;
+      // "Typing..." indicator dikhao taaki user ko pata chale processing ho rahi hai
+      messagesBox.innerHTML += `<div id="typingIndicator" style="margin-bottom:10px; text-align:left; color:#999; font-size:13px; font-style:italic;">Astrologer is analyzing your kundli...</div>`;
       messagesBox.scrollTop = messagesBox.scrollHeight;
       input.value = "";
       sendBtn.disabled = true;
@@ -1475,10 +1477,14 @@
             history: chatHistory,
             language: selectedLanguage,
           }),
+          signal: AbortSignal.timeout(50000),
         });
         const data = await res.json();
 
         if (!res.ok) throw new Error(data.error || "Kuch galat ho gaya");
+
+        // Typing indicator hatao
+        document.getElementById("typingIndicator")?.remove();
 
         // Bot ka jawab dikhao (ab structured, multi-line ho sakta hai, isliye pre-wrap use karte hain)
         messagesBox.innerHTML += `<div style="margin-bottom:10px; text-align:left;">
@@ -1494,6 +1500,7 @@
         chatHistory.push({ role: "user", content: question });
         chatHistory.push({ role: "assistant", content: data.answer });
       } catch (err) {
+        document.getElementById("typingIndicator")?.remove();
         messagesBox.innerHTML += `<div style="color:red; margin-bottom:10px;">Error: ${err.message}</div>`;
       } finally {
         sendBtn.disabled = false;
