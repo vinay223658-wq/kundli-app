@@ -374,25 +374,25 @@ async function getDailyHoroscopeFromClaude({ name, moonRashi, nakshatra, period,
     daily: {
       label: `AAJ (${todayStr})`,
       instruction: "aaj ke din ka",
-      maxTokens: 400,
+      maxTokens: 1500,
       lines: "5-6 lines se zyada mat likho",
     },
     weekly: {
       label: `is hafte (${todayStr} se agle 7 din)`,
       instruction: "is poore hafte ka",
-      maxTokens: 500,
+      maxTokens: 1500,
       lines: "7-8 lines mein rakho",
     },
     monthly: {
       label: `is mahine (${now.toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "Asia/Kolkata" })})`,
       instruction: "is poore mahine ka",
-      maxTokens: 600,
+      maxTokens: 1800,
       lines: "9-10 lines mein rakho",
     },
     yearly: {
       label: `is saal (${now.getFullYear()})`,
       instruction: "is poore saal ka",
-      maxTokens: 700,
+      maxTokens: 2000,
       lines: "12-14 lines mein rakho, alag alag mahino/quarters ka thoda mention karte hue",
     },
   };
@@ -439,6 +439,9 @@ Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone friendly aur
 
   const data = await response.json();
   const textBlock = data.content.find((c) => c.type === "text");
+  if (!textBlock || !textBlock.text) {
+    console.error("Claude ne khali/unexpected response diya. Poora response:", JSON.stringify(data));
+  }
   return textBlock ? textBlock.text : "";
 }
 
@@ -471,7 +474,7 @@ Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur mot
     },
     body: JSON.stringify({
       model: "claude-sonnet-5",
-      max_tokens: 600,
+      max_tokens: 1800,
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -484,6 +487,9 @@ Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur mot
 
   const data = await response.json();
   const textBlock = data.content.find((c) => c.type === "text");
+  if (!textBlock || !textBlock.text) {
+    console.error("Claude ne khali/unexpected response diya. Poora response:", JSON.stringify(data));
+  }
   return textBlock ? textBlock.text : "";
 }
 
@@ -577,7 +583,7 @@ Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur bal
     },
     body: JSON.stringify({
       model: "claude-sonnet-5",
-      max_tokens: 600,
+      max_tokens: 1800,
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -590,6 +596,9 @@ Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur bal
 
   const data = await response.json();
   const textBlock = data.content.find((c) => c.type === "text");
+  if (!textBlock || !textBlock.text) {
+    console.error("Claude ne khali/unexpected response diya. Poora response:", JSON.stringify(data));
+  }
   return textBlock ? textBlock.text : "";
 }
 
@@ -693,7 +702,7 @@ ZAROORI RULES
     },
     body: JSON.stringify({
       model: "claude-sonnet-5",
-      max_tokens: 2000,
+      max_tokens: 4096,
       system: systemPrompt,
       messages,
     }),
