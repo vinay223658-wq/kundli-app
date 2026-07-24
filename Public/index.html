@@ -332,10 +332,12 @@
     </div>
 
     <!-- ============ TAB NAVIGATION ============ -->
-    <div style="display:flex; gap:6px; margin-bottom:16px;">
-      <button id="tabBtnHoroscope" onclick="switchTab('horoscope')" style="flex:1; margin-top:0; padding:10px 6px; font-size:12px;">🔮 Horoscope</button>
-      <button id="tabBtnMatching" onclick="switchTab('matching')" style="flex:1; margin-top:0; padding:10px 6px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">💑 Matching</button>
-      <button id="tabBtnPanchang" onclick="switchTab('panchang')" style="flex:1; margin-top:0; padding:10px 6px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">📅 Panchang</button>
+    <div style="display:flex; gap:5px; margin-bottom:16px; flex-wrap:wrap;">
+      <button id="tabBtnHoroscope" onclick="switchTab('horoscope')" style="flex:1; min-width:70px; margin-top:0; padding:9px 4px; font-size:11px;">🔮 Horoscope</button>
+      <button id="tabBtnChart" onclick="switchTab('chart')" style="flex:1; min-width:70px; margin-top:0; padding:9px 4px; font-size:11px; background:rgba(255,255,255,0.12); box-shadow:none;">📊 Chart</button>
+      <button id="tabBtnChat" onclick="switchTab('chat')" style="flex:1; min-width:70px; margin-top:0; padding:9px 4px; font-size:11px; background:rgba(255,255,255,0.12); box-shadow:none;">🗨️ Talk with AI</button>
+      <button id="tabBtnMatching" onclick="switchTab('matching')" style="flex:1; min-width:70px; margin-top:0; padding:9px 4px; font-size:11px; background:rgba(255,255,255,0.12); box-shadow:none;">💑 Matching</button>
+      <button id="tabBtnPanchang" onclick="switchTab('panchang')" style="flex:1; min-width:70px; margin-top:0; padding:9px 4px; font-size:11px; background:rgba(255,255,255,0.12); box-shadow:none;">📅 Panchang</button>
     </div>
 
     <!-- ============ TAB 1: HOROSCOPE ============ -->
@@ -379,13 +381,38 @@
   <button id="submitBtn" onclick="getHoroscope()">View Horoscope</button>
     </div>
 
-  <div id="chartContainer" style="display:none; margin-top: 20px; text-align: center;">
-    <h3 style="font-size: 15px; color: #ffd77a;">Your Kundli Chart</h3>
-    <div style="display:flex; gap:8px; justify-content:center; margin-bottom:10px;">
-      <button id="chartStyleNorthBtn" onclick="switchChartStyle('north')" style="width:auto; margin-top:0; padding:6px 14px; font-size:12px;">North Indian</button>
-      <button id="chartStyleSouthBtn" onclick="switchChartStyle('south')" style="width:auto; margin-top:0; padding:6px 14px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">South Indian</button>
+  <div id="result"></div>
+
+  <!-- PDF Download button - horoscope milne ke baad hi dikhega -->
+  <div id="pdfDownloadSection" style="display:none; margin-top: 16px; text-align:center;">
+    <button id="pdfDownloadBtn" onclick="downloadKundliPdf()" style="background: linear-gradient(135deg, #3a7d5c, #2c5f47);">📄 Download Kundli PDF</button>
+  </div>
+
+  <!-- Daily/Weekly/Monthly/Yearly Horoscope Section - horoscope milne ke baad hi dikhega -->
+  <div id="dailyHoroscopeSection" class="card" style="display:none; margin-top: 16px;">
+    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">🌞 Rashifal (Horoscope)</h3>
+    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+      <button id="periodBtnDaily" onclick="getDailyHoroscope('daily')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px;">Aaj</button>
+      <button id="periodBtnWeekly" onclick="getDailyHoroscope('weekly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Hafte</button>
+      <button id="periodBtnMonthly" onclick="getDailyHoroscope('monthly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Mahine</button>
+      <button id="periodBtnYearly" onclick="getDailyHoroscope('yearly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Saal</button>
     </div>
-    <div id="chartSvgHolder" style="background:white; padding:12px; border-radius:10px; border:1px solid #eadfca;"></div>
+    <div id="dailyHoroscopeResult" style="display:none; margin-top:12px; background:white; border-radius:10px; padding:12px; color:#2b2b2b; font-size:14px; line-height:1.5;"></div>
+  </div>
+    </div> <!-- tabHoroscope band -->
+
+    <!-- ============ TAB: CHART & DETAILS ============ -->
+    <div id="tabChart" class="tab-content" style="display:none;">
+  <div id="chartContainer" class="card" style="text-align: center;">
+    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">Your Kundli Chart</h3>
+    <p class="hint" id="chartTabHint">Pehle "Horoscope" tab mein apni kundli generate karo</p>
+    <div id="chartControls" style="display:none;">
+      <div style="display:flex; gap:8px; justify-content:center; margin-bottom:10px;">
+        <button id="chartStyleNorthBtn" onclick="switchChartStyle('north')" style="width:auto; margin-top:0; padding:6px 14px; font-size:12px;">North Indian</button>
+        <button id="chartStyleSouthBtn" onclick="switchChartStyle('south')" style="width:auto; margin-top:0; padding:6px 14px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">South Indian</button>
+      </div>
+      <div id="chartSvgHolder" style="background:white; padding:12px; border-radius:10px; border:1px solid #eadfca;"></div>
+    </div>
   </div>
 
   <!-- On-demand extra details: rate limit bachane ke liye ye sirf button dabane pe load hote hain -->
@@ -412,29 +439,14 @@
     <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">🐍 Kaal Sarp Dosha Check</h3>
     <div id="kaalSarpDoshaHolder"></div>
   </div>
+    </div> <!-- tabChart band -->
 
-  <div id="result"></div>
-
-  <!-- PDF Download button - horoscope milne ke baad hi dikhega -->
-  <div id="pdfDownloadSection" style="display:none; margin-top: 16px; text-align:center;">
-    <button id="pdfDownloadBtn" onclick="downloadKundliPdf()" style="background: linear-gradient(135deg, #3a7d5c, #2c5f47);">📄 Download Kundli PDF</button>
-  </div>
-
-  <!-- Daily/Weekly/Monthly/Yearly Horoscope Section - horoscope milne ke baad hi dikhega -->
-  <div id="dailyHoroscopeSection" class="card" style="display:none; margin-top: 16px;">
-    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">🌞 Rashifal (Horoscope)</h3>
-    <div style="display:flex; gap:6px; flex-wrap:wrap;">
-      <button id="periodBtnDaily" onclick="getDailyHoroscope('daily')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px;">Aaj</button>
-      <button id="periodBtnWeekly" onclick="getDailyHoroscope('weekly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Hafte</button>
-      <button id="periodBtnMonthly" onclick="getDailyHoroscope('monthly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Mahine</button>
-      <button id="periodBtnYearly" onclick="getDailyHoroscope('yearly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Saal</button>
-    </div>
-    <div id="dailyHoroscopeResult" style="display:none; margin-top:12px; background:white; border-radius:10px; padding:12px; color:#2b2b2b; font-size:14px; line-height:1.5;"></div>
-  </div>
-
-  <!-- Chat Section - horoscope milne ke baad hi dikhega -->
-  <div id="chatSection" class="card" style="display:none; margin-top: 24px;">
-    <h3 style="font-size: 15px; color: #ffd77a;">💬 Ask a Question <span style="font-size:12px; color:#d8c3a0; font-weight:normal;">(₹5 per question)</span></h3>
+    <!-- ============ TAB: TALK WITH AI (CHAT) ============ -->
+    <div id="tabChat" class="tab-content" style="display:none;">
+  <!-- Chat Section -->
+  <div id="chatSection" class="card">
+    <h3 style="font-size: 15px; color: #ffd77a; margin-top:0;">💬 Ask a Question <span style="font-size:12px; color:#d8c3a0; font-weight:normal;">(₹5 per question)</span></h3>
+    <p class="hint" id="chatTabHint">Pehle "Horoscope" tab mein apni kundli generate karo, phir yahan aake sawal pooch sakte ho.</p>
     <div id="chatMessages" style="
       background: white;
       border: 1px solid #eadfca;
@@ -449,7 +461,7 @@
       <button id="chatSendBtn" style="width:auto; margin-top:0; padding: 10px 16px;" onclick="sendChatMessage()">Send</button>
     </div>
   </div>
-    </div> <!-- tabHoroscope band -->
+    </div> <!-- tabChat band -->
 
     <!-- ============ TAB 2: KUNDLI MATCHING ============ -->
     <div id="tabMatching" class="tab-content" style="display:none;">
@@ -543,7 +555,7 @@
       inactive: "background: rgba(255,255,255,0.12); box-shadow: none;",
     };
     function switchTab(tabName) {
-      const tabs = ["horoscope", "matching", "panchang"];
+      const tabs = ["horoscope", "chart", "chat", "matching", "panchang"];
       tabs.forEach((t) => {
         document.getElementById("tab" + t.charAt(0).toUpperCase() + t.slice(1)).style.display =
           t === tabName ? "block" : "none";
@@ -645,7 +657,7 @@
             suggestionsEl.innerHTML = matches
               .map(
                 (c, i) =>
-                  `<div data-index="${i}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0e6d2; font-size:13px;">
+                  `<div data-index="${i}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0e6d2; font-size:13px; color:#2b2b2b;">
                     ${c.name}
                   </div>`
               )
@@ -1161,15 +1173,19 @@
 
         if (!res.ok) throw new Error(data.error || "Kuch galat ho gaya");
 
-        // Agar chart mila hai to usko dikhao (default North Indian)
-        const chartContainer = document.getElementById("chartContainer");
+        // Agar chart mila hai to usko dikhao (default North Indian) - ab "Chart" tab mein
+        const chartTabHint = document.getElementById("chartTabHint");
+        const chartControls = document.getElementById("chartControls");
         if (data.chartSvg || data.chartSvgSouth) {
-          chartContainer.style.display = "block";
+          chartTabHint.style.display = "none";
+          chartControls.style.display = "block";
           savedChartSvg = data.chartSvg;
           savedChartSvgSouth = data.chartSvgSouth;
           switchChartStyle(data.chartSvg ? "north" : "south");
         } else {
-          chartContainer.style.display = "none";
+          chartTabHint.textContent = "Chart load nahi ho paya, dobara try karo";
+          chartTabHint.style.display = "block";
+          chartControls.style.display = "none";
         }
 
         // NOTE: Planet positions, Mangal Dosha, Kaal Sarp Dosha ab automatic nahi dikhte —
@@ -1178,12 +1194,12 @@
         resultDiv.style.display = "block";
         resultDiv.textContent = data.careerHoroscope;
 
-        // Chat ke liye data save karo aur chat section dikhao
+        // Chat ke liye data save karo aur chat section dikhao ("Talk with AI" tab mein)
         savedKundliData = data.kundliRaw;
         savedName = payload.name;
         chatHistory = [];
         document.getElementById("chatMessages").innerHTML = "";
-        document.getElementById("chatSection").style.display = "block";
+        document.getElementById("chatTabHint").style.display = "none";
 
         // PDF aur Daily Horoscope ke liye baaki data save karo
         // NOTE: Planet Positions, Mangal Dosha, Kaal Sarp Dosha ab yahan save nahi hote —
@@ -1488,7 +1504,7 @@
 
         // Bot ka jawab dikhao (ab structured, multi-line ho sakta hai, isliye pre-wrap use karte hain)
         messagesBox.innerHTML += `<div style="margin-bottom:10px; text-align:left;">
-          <span style="background:#fdf6ec; padding:10px 14px; border-radius:10px; display:inline-block; max-width:95%; white-space:pre-wrap; line-height:1.6;">${data.answer}</span>
+          <span style="background:#fdf6ec; color:#2b2b2b; padding:10px 14px; border-radius:10px; display:inline-block; max-width:95%; white-space:pre-wrap; line-height:1.6;">${data.answer}</span>
         </div>`;
         messagesBox.scrollTop = messagesBox.scrollHeight;
 
