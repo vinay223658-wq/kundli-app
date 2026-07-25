@@ -209,6 +209,7 @@
 
         localStorage.setItem("kundli_uid", data.uid);
         localStorage.setItem("kundli_wallet", data.user.wallet);
+        localStorage.setItem("kundli_email", email);
 
         showMainApp(data.user.wallet);
       } catch (err) {
@@ -1143,6 +1144,9 @@
         lat: document.getElementById("lat").value,
         lon: document.getElementById("lon").value,
         language: selectedLanguage,
+        uid: localStorage.getItem("kundli_uid"),
+        email: localStorage.getItem("kundli_email"),
+        placeName: selectedCity ? selectedCity.name : "",
       };
 
       if (!payload.name || !payload.dob || !selectedCity) {

@@ -1009,12 +1009,33 @@ app.post("/api/auth/verify", async (req, res) => {
 // --------------------------------------------------------
 app.post("/api/horoscope", async (req, res) => {
   try {
-    const { name, dob, tob, lat, lon, language } = req.body;
+    const { name, dob, tob, lat, lon, language, uid, email, placeName } = req.body;
 
     if (!name || !dob || !tob || !lat || !lon) {
       return res.status(400).json({
         error: "name, dob, tob, lat, lon — sab fields zaroori hain",
       });
+    }
+
+    // User ka record backend mein save karte hain (email, naam, location ke saath)
+    // — taaki app owner dekh sake kitne logon ne app use ki
+    if (uid) {
+      try {
+        await db.collection("user_records").add({
+          uid,
+          email: email || null,
+          name,
+          dob,
+          tob,
+          placeName: placeName || null,
+          lat,
+          lon,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (recordErr) {
+        // Record save fail ho to bhi horoscope generate karna band mat karo
+        console.error("User record save fail hua:", recordErr.message);
+      }
     }
 
     // 1. Real kundli data lao (cache check pehle karte hain)
