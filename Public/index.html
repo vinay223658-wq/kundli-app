@@ -1469,13 +1469,9 @@
       sendBtn.disabled = true;
 
       try {
-        // Agar ye sab abhi tak load nahi hui, ek baar try kar lete hain (chat ko poora context mile)
-        const lazyFetches = [];
-        if (!savedDashaData) lazyFetches.push(fetchDashaLazily());
-        if (!savedPlanetPositions) lazyFetches.push(loadPlanetPositionsSilently());
-        if (!savedMangalDosha) lazyFetches.push(loadMangalDoshaSilently());
-        if (!savedKaalSarpDosha) lazyFetches.push(loadKaalSarpDoshaSilently());
-        await Promise.allSettled(lazyFetches);
+        // Sirf Dasha context chahiye chat ke liye ab (Planet/Mangal/KaalSarp "Chart" tab mein hi milenge,
+        // isse chat fast hoti hai — kam parallel calls, kam data)
+        if (!savedDashaData) await fetchDashaLazily();
 
         const uid = localStorage.getItem("kundli_uid");
         const res = await fetch("/api/chat", {
@@ -1485,9 +1481,6 @@
             uid,
             name: savedName,
             kundliData: savedKundliData,
-            planetPositions: savedPlanetPositions,
-            mangalDosha: savedMangalDosha,
-            kaalSarpDosha: savedKaalSarpDosha,
             dashaData: savedDashaData,
             question,
             history: chatHistory,

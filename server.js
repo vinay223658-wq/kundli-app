@@ -606,41 +606,97 @@ Sirf final paragraph do, koi extra heading ya disclaimer nahi. Tone warm aur bal
 // --------------------------------------------------------
 // STEP 4: Chatbot — user apne sawal pooch sake apni kundli ke baare mein
 // --------------------------------------------------------
+// --------------------------------------------------------
+// CHAT OPTIMIZATION HELPERS: Chat ke liye data ko chhota/clean karte hain
+// (poora raw Prokerala JSON bhejna slow hai, isliye sirf zaroori fields nikalte hain)
+// --------------------------------------------------------
+
+// Kundli data se sirf zaroori fields nikalta hai (nakshatra, rashi, ascendant, yogas)
+function trimKundliData(kundliData) {
+  try {
+    const d = kundliData?.data || kundliData;
+    if (!d) return kundliData;
+
+    const nd = d.nakshatra_details;
+    if (!nd) return kundliData; // structure pehchan nahi paye, safe fallback: original hi bhejo
+
+    const trimmed = {
+      chandra_rashi: nd.chandra_rasi?.name,
+      soorya_rashi: nd.soorya_rasi?.name,
+      nakshatra: nd.nakshatra?.name,
+      nakshatra_pada: nd.nakshatra?.pada,
+      nakshatra_lord: nd.nakshatra?.lord?.name,
+      zodiac: nd.zodiac?.name,
+    };
+    if (Array.isArray(d.yoga_details) && d.yoga_details.length) {
+      trimmed.yogas = d.yoga_details.map((y) => y.name).filter(Boolean);
+    }
+    return trimmed;
+  } catch {
+    return kundliData; // kuch bhi gadbad ho to original data hi bhej do, chat na tute
+  }
+}
+
+// Dasha ke poore (bahut bade, deeply nested) tree se sirf ABHI chal rahi
+// Mahadasha/Antardasha/Pratyantardasha nikalta hai — baaki sab drop kar dete hain
+function trimDashaData(dashaData) {
+  try {
+    const periods = dashaData?.data?.dasha_periods || dashaData?.dasha_periods;
+    if (!Array.isArray(periods)) return dashaData; // pehchan nahi paye, safe fallback
+
+    const now = Date.now();
+    const isCurrent = (p) => {
+      const start = new Date(p.start).getTime();
+      const end = new Date(p.end).getTime();
+      return start <= now && now <= end;
+    };
+
+    const chain = [];
+    let level = periods;
+    let guard = 0;
+    while (Array.isArray(level) && level.length && guard < 5) {
+      const current = level.find(isCurrent) || level[0];
+      if (!current) break;
+      chain.push({ name: current.name, start: current.start, end: current.end });
+      level = current.antardasha || current.paryantardasha || current.pratyantardasha || null;
+      guard++;
+    }
+
+    return chain.length ? { current_dasha_chain: chain } : dashaData;
+  } catch {
+    return dashaData; // kuch bhi gadbad ho to original data hi bhej do, chat na tute
+  }
+}
+
 async function askAstrologerBot({
   name,
   kundliData,
-  planetPositions,
-  mangalDosha,
-  kaalSarpDosha,
   dashaData,
   question,
   history,
   language,
 }) {
   const langInstruction = getLanguageInstruction(language);
+  const cleanKundli = trimKundliData(kundliData);
+  const cleanDasha = trimDashaData(dashaData);
 
   const systemPrompt = `Tum ek senior, anubhavi (experienced) Vedic astrologer ho jisne 20+ saal se logon ki kundli padhi hai.
-Tum kabhi generic, template-jaisa jawab nahi dete — har jawab us specific insaan ki **poori kundli data ke gehre analysis** se aata hai.
+Tum kabhi generic, template-jaisa jawab nahi dete — har jawab us specific insaan ki kundli data ke analysis se aata hai.
 
 ===========================================
-USER KI POORI KUNDLI DATA (SAB SOURCE OF TRUTH HAI)
+USER KI KUNDLI DATA (SOURCE OF TRUTH HAI)
 ===========================================
 Naam: ${name}
 
-1. Birth Details / Ascendant / Rashi / Nakshatra (Prokerala birth-details):
-${JSON.stringify(kundliData)}
+1. Birth Details — Ascendant/Rashi/Nakshatra:
+${JSON.stringify(cleanKundli)}
 
-2. Grahon (Planets) ki exact position — Rashi, Nakshatra, Degree, Retrograde status:
-${planetPositions ? JSON.stringify(planetPositions) : "Available nahi hai is baar"}
+2. Abhi chal rahi Mahadasha/Antardasha (current planetary period):
+${cleanDasha ? JSON.stringify(cleanDasha) : "Available nahi hai is baar"}
 
-3. Mangal Dosha (Manglik) status:
-${mangalDosha ? JSON.stringify(mangalDosha) : "Available nahi hai is baar"}
-
-4. Kaal Sarp Dosha status:
-${kaalSarpDosha ? JSON.stringify(kaalSarpDosha) : "Available nahi hai is baar"}
-
-5. Mahadasha / Antardasha (current planetary period):
-${dashaData ? JSON.stringify(dashaData) : "Available nahi hai is baar"}
+Note: Graha Positions, Mangal Dosha aur Kaal Sarp Dosha ki detailed report is chat mein available nahi hai
+(speed ke liye). Agar user in cheezon ke baare mein poochta hai, to unhe bata do ki "Chart" tab mein
+jaake ye detailed reports dekh sakte hain — khud se guess/bana ke mat batao.
 
 ===========================================
 TUMHARA KAAM — HAR SAWAL PE YE PROCESS FOLLOW KARO
@@ -651,21 +707,13 @@ Career, Government Job, Private Job, Business, Marriage, Love Marriage, Relation
 Education, Children, Finance, Foreign Settlement, Property, Court Cases, Travel,
 Spiritual Growth, Remedies, Gemstones, Daily Horoscope — ya jo bhi category ho.
 
-STEP 2 — Category ke hisaab se sirf RELEVANT factors analyze karo (upar diye JSON data mein se):
-- Career/Job: 10th house, 6th house, Saturn, Sun, Mercury, current Mahadasha/Antardasha
-- Business: 2nd, 7th, 10th, 11th house, Mercury, Jupiter, Rahu
-- Marriage/Love: 7th house, Venus, Jupiter, Dasha period
-- Health: 6th, 8th, 12th house, Mars, Saturn
-- Finance: 2nd, 11th house, Jupiter, Venus
-- (Aur categories ke liye jo bhi astrologically relevant grah/houses hon, apni knowledge se use karo)
-
-Jahan bhi data available ho wahan in cheezon ko dhyan mein rakho: Ascendant (Lagna), Moon Rashi, Sun sign,
-Nakshatra, planet degrees, retrograde status, exaltation/debilitation, combustion, current Dasha/Antardasha,
-aur agar data mein Yogas ya aspects (drishti) dikhein to unko bhi mention karo.
+STEP 2 — Agar sawal Planet Positions, Mangal Dosha, ya Kaal Sarp Dosha ke baare mein direct pooche,
+to politely "Chart" tab dekhne ko bolo. Baaki sab sawalon ke liye available data (Rashi, Nakshatra,
+Ascendant, current Dasha) ke aadhar par apni astrological knowledge use karke jawab do.
 
 STEP 3 — Jawab is format mein do (sirf jo sections relevant hon, sab zaroori nahi har baar):
 
-🔮 Kundli Analysis — kaunse houses/grahon ne is sawal ko affect kiya (2-3 lines)
+🔮 Kundli Analysis — Rashi/Nakshatra/Dasha ne is sawal ko kaise affect kiya (2-3 lines)
 📖 Astrological Reason — kyun ye prediction ban rahi hai, simple bhasha mein
 🪐 Current Dasha — abhi ka Mahadasha/Antardasha is sawal pe kaise asar daal raha hai (agar data available ho)
 📅 Best Time — agar possible ho to rough time period batao (warna "abhi clear nahi" bol do)
@@ -676,7 +724,7 @@ STEP 3 — Jawab is format mein do (sirf jo sections relevant hon, sab zaroori n
 ===========================================
 ZAROORI RULES
 ===========================================
-- HAMESHA upar diye gaye asli kundli data (planets, houses, dasha) ke aadhar par jawab do — sirf DOB dekh ke generic baat mat karo
+- HAMESHA upar diye gaye asli kundli data ke aadhar par jawab do — sirf DOB dekh ke generic baat mat karo
 - Kabhi bhi darawana (fear-creating) jawab mat do
 - Kabhi kisi cheez ki 100% guarantee mat do — hamesha "astrological possibility hai" jaisa tone rakho jab uncertain ho
 - Agar koi data missing hai (jaise Dasha available nahi hai), to usko honestly mention karo, bana ke mat batao
@@ -701,8 +749,8 @@ ZAROORI RULES
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-5",
-      max_tokens: 4096,
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 2048,
       system: systemPrompt,
       messages,
     }),
@@ -1208,9 +1256,6 @@ app.post("/api/chat", async (req, res) => {
       uid,
       name,
       kundliData,
-      planetPositions,
-      mangalDosha,
-      kaalSarpDosha,
       dashaData,
       question,
       history,
@@ -1242,9 +1287,6 @@ app.post("/api/chat", async (req, res) => {
     const answer = await askAstrologerBot({
       name,
       kundliData,
-      planetPositions,
-      mangalDosha,
-      kaalSarpDosha,
       dashaData,
       question,
       history,
