@@ -1177,6 +1177,12 @@
 
         if (!res.ok) throw new Error(data.error || "Kuch galat ho gaya");
 
+        // Agar horoscope ke liye paisa kata hai (2nd+ baar), wallet display update karo
+        if (data.newWallet !== null && data.newWallet !== undefined) {
+          localStorage.setItem("kundli_wallet", data.newWallet);
+          document.getElementById("walletDisplay").textContent = "Wallet: ₹" + data.newWallet;
+        }
+
         // Agar chart mila hai to usko dikhao (default North Indian) - ab "Chart" tab mein
         const chartTabHint = document.getElementById("chartTabHint");
         const chartControls = document.getElementById("chartControls");

@@ -1038,6 +1038,31 @@ app.post("/api/horoscope", async (req, res) => {
       }
     }
 
+    // Pehla horoscope FREE hai, dusre se ₹1 lagega
+    let newWalletAfterHoroscope = null;
+    if (uid) {
+      const userRef = db.collection("users").doc(uid);
+      const userDoc = await userRef.get();
+      const userData = userDoc.exists ? userDoc.data() : {};
+      const horoscopeCount = userData.horoscopeCount || 0;
+      const currentWallet = userData.wallet || 0;
+
+      if (horoscopeCount >= 1) {
+        // Ye pehla nahi hai — paisa lagega
+        if (currentWallet < HOROSCOPE_PRICE) {
+          return res.status(400).json({
+            error: `Wallet mein sirf ₹${currentWallet} hai. Horoscope generate karne ke liye ₹${HOROSCOPE_PRICE} chahiye — pehle wallet mein paisa add karo.`,
+            insufficientBalance: true,
+          });
+        }
+        newWalletAfterHoroscope = currentWallet - HOROSCOPE_PRICE;
+        await userRef.set({ wallet: newWalletAfterHoroscope, horoscopeCount: horoscopeCount + 1 }, { merge: true });
+      } else {
+        // Pehla horoscope — free, bas counter badhao
+        await userRef.set({ horoscopeCount: horoscopeCount + 1 }, { merge: true });
+      }
+    }
+
     // 1. Real kundli data lao (cache check pehle karte hain)
     const kundliCacheKey = makeCacheKey("kundli", { dob, tob, lat, lon });
     let kundliData = await getCached(kundliCacheKey);
@@ -1079,6 +1104,7 @@ app.post("/api/horoscope", async (req, res) => {
       kundliRaw: kundliData,
       chartSvg,
       careerHoroscope,
+      newWallet: newWalletAfterHoroscope,
     });
   } catch (err) {
     console.error(err);
@@ -1270,6 +1296,7 @@ app.post("/api/match", async (req, res) => {
 // Har sawal ka ₹5 wallet se katega
 // --------------------------------------------------------
 const CHAT_PRICE = 5;
+const HOROSCOPE_PRICE = 1;
 
 app.post("/api/chat", async (req, res) => {
   try {
