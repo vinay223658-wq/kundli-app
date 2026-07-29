@@ -1225,18 +1225,74 @@ app.get("/api/planet-positions", async (req, res) => {
 // --------------------------------------------------------
 // DAILY HOROSCOPE ENDPOINT: User ki Chandra Rashi ke hisaab se aaj ka horoscope
 // --------------------------------------------------------
+const RASHIFAL_PRICE = { daily: 0, weekly: 0, monthly: 1, yearly: 5 };
+
+// --------------------------------------------------------
+// PDF CHARGE: Kundli PDF download karne se pehle ₹5 katne ke liye
+// --------------------------------------------------------
+const PDF_PRICE = 5;
+
+app.post("/api/charge-pdf", async (req, res) => {
+  try {
+    const { uid } = req.body;
+    if (!uid) {
+      return res.status(400).json({ error: "Login karna zaroori hai" });
+    }
+
+    const userRef = db.collection("users").doc(uid);
+    const userDoc = await userRef.get();
+    const currentWallet = userDoc.exists ? userDoc.data().wallet || 0 : 0;
+
+    if (currentWallet < PDF_PRICE) {
+      return res.status(400).json({
+        error: `Wallet mein sirf ₹${currentWallet} hai. PDF download karne ke liye ₹${PDF_PRICE} chahiye — pehle wallet mein paisa add karo.`,
+        insufficientBalance: true,
+      });
+    }
+
+    const newWallet = currentWallet - PDF_PRICE;
+    await userRef.update({ wallet: newWallet });
+
+    res.json({ success: true, newWallet });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post("/api/daily-horoscope", async (req, res) => {
   try {
-    const { name, moonRashi, nakshatra, period, language } = req.body;
+    const { name, moonRashi, nakshatra, period, language, uid } = req.body;
 
     if (!name || !moonRashi) {
       return res.status(400).json({ error: "name aur moonRashi zaroori hain" });
     }
 
+    const price = RASHIFAL_PRICE[period] || 0;
+    let newWallet = null;
+
+    if (price > 0) {
+      if (!uid) {
+        return res.status(400).json({ error: "Login karna zaroori hai" });
+      }
+      const userRef = db.collection("users").doc(uid);
+      const userDoc = await userRef.get();
+      const currentWallet = userDoc.exists ? userDoc.data().wallet || 0 : 0;
+
+      if (currentWallet < price) {
+        return res.status(400).json({
+          error: `Wallet mein sirf ₹${currentWallet} hai. Iske liye ₹${price} chahiye — pehle wallet mein paisa add karo.`,
+          insufficientBalance: true,
+        });
+      }
+      newWallet = currentWallet - price;
+      await userRef.update({ wallet: newWallet });
+    }
+
     const dailyHoroscope = await getDailyHoroscopeFromClaude({
       name, moonRashi, nakshatra, period, language,
     });
-    res.json({ success: true, dailyHoroscope });
+    res.json({ success: true, dailyHoroscope, newWallet });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

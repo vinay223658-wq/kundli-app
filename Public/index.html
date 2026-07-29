@@ -386,7 +386,7 @@
 
   <!-- PDF Download button - horoscope milne ke baad hi dikhega -->
   <div id="pdfDownloadSection" style="display:none; margin-top: 16px; text-align:center;">
-    <button id="pdfDownloadBtn" onclick="downloadKundliPdf()" style="background: linear-gradient(135deg, #3a7d5c, #2c5f47);">📄 Download Kundli PDF</button>
+    <button id="pdfDownloadBtn" onclick="downloadKundliPdf()" style="background: linear-gradient(135deg, #3a7d5c, #2c5f47);">📄 Download Kundli PDF (₹5)</button>
   </div>
 
   <!-- Daily/Weekly/Monthly/Yearly Horoscope Section - horoscope milne ke baad hi dikhega -->
@@ -395,8 +395,8 @@
     <div style="display:flex; gap:6px; flex-wrap:wrap;">
       <button id="periodBtnDaily" onclick="getDailyHoroscope('daily')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px;">Aaj</button>
       <button id="periodBtnWeekly" onclick="getDailyHoroscope('weekly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Hafte</button>
-      <button id="periodBtnMonthly" onclick="getDailyHoroscope('monthly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Mahine</button>
-      <button id="periodBtnYearly" onclick="getDailyHoroscope('yearly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Saal</button>
+      <button id="periodBtnMonthly" onclick="getDailyHoroscope('monthly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Mahine (₹1)</button>
+      <button id="periodBtnYearly" onclick="getDailyHoroscope('yearly')" style="width:auto; margin-top:0; padding:8px 12px; font-size:12px; background:rgba(255,255,255,0.12); box-shadow:none;">Is Saal (₹5)</button>
     </div>
     <div id="dailyHoroscopeResult" style="display:none; margin-top:12px; background:white; border-radius:10px; padding:12px; color:#2b2b2b; font-size:14px; line-height:1.5;"></div>
   </div>
@@ -1273,10 +1273,16 @@
             nakshatra: savedMoonNakshatra,
             period,
             language: selectedLanguage,
+            uid: localStorage.getItem("kundli_uid"),
           }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Kuch galat ho gaya");
+
+        if (data.newWallet !== null && data.newWallet !== undefined) {
+          localStorage.setItem("kundli_wallet", data.newWallet);
+          document.getElementById("walletDisplay").textContent = "Wallet: ₹" + data.newWallet;
+        }
 
         resultEl.textContent = data.dailyHoroscope;
         resultEl.style.display = "block";
@@ -1322,9 +1328,24 @@
     async function downloadKundliPdf() {
       const btn = document.getElementById("pdfDownloadBtn");
       btn.disabled = true;
-      btn.textContent = "PDF banaya ja raha hai...";
+      btn.textContent = "Charging ₹5...";
 
       try {
+        // Pehle ₹5 wallet se katte hain, tabhi PDF banega
+        const uid = localStorage.getItem("kundli_uid");
+        const chargeRes = await fetch("/api/charge-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid }),
+        });
+        const chargeData = await chargeRes.json();
+        if (!chargeRes.ok) throw new Error(chargeData.error || "Charge fail hua");
+
+        localStorage.setItem("kundli_wallet", chargeData.newWallet);
+        document.getElementById("walletDisplay").textContent = "Wallet: ₹" + chargeData.newWallet;
+
+        btn.textContent = "PDF banaya ja raha hai...";
+
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ unit: "pt", format: "a4" });
         const pageWidth = doc.internal.pageSize.getWidth();
@@ -1456,7 +1477,7 @@
         alert("PDF banane mein error aayi: " + err.message);
       } finally {
         btn.disabled = false;
-        btn.textContent = "📄 Download Kundli PDF";
+        btn.textContent = "📄 Download Kundli PDF (₹5)";
       }
     }
 
